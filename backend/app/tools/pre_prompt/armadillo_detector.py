@@ -33,9 +33,10 @@ class ArmadilloDetector(AITool):
                 "Armadillo detected in prompt"
             )
             return ToolResult(
-                modified_content=content.replace("armadillo", "[ARMADILLO_DETECTED]"),
+                modified_content=content,
                 state={**state, "armadillo_detected": True},
-                action=ToolAction.MODIFY,
+                action=ToolAction.DETECTED,
+                action_description="DETECTED: Armadillo mention found (flagged for monitoring)",
                 flags=["armadillo_detected"],
                 metadata={
                     "detection_count": content.lower().count("armadillo")
@@ -46,5 +47,6 @@ class ArmadilloDetector(AITool):
             modified_content=content,
             state=state,
             action=ToolAction.CONTINUE,
+            action_description="No armadillo mentions detected",
             flags=[],
         )

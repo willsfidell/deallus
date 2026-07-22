@@ -88,7 +88,7 @@ class ProcessResponse(BaseModel):
     prompt: str
     response: str
     execution_time_ms: float
-    tools_executed: list[str] = []
+    tools_executed: list[dict] = []  # Changed to list of dicts with action details
     tool_flags: dict[str, list[str]] = {}
 
 

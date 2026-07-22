@@ -120,8 +120,14 @@ class ToolRegistry:
                 content=current_content, state=state, metadata=metadata
             )
 
-            # Track executed tool
-            executed_tools.append(tool.name)
+            # Track executed tool with action description
+            tool_entry = {
+                "name": tool.name,
+                "stage": tool.stage,
+                "action": result.action.value,
+                "description": result.action_description or f"{result.action.value.upper()} - no description"
+            }
+            executed_tools.append(tool_entry)
 
             # If tool blocks, return immediately (error)
             if result.action == ToolAction.BLOCK:

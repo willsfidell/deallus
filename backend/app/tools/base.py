@@ -10,9 +10,10 @@ import abc
 class ToolAction(str, Enum):
     """Action to take after tool execution."""
 
-    CONTINUE = "continue"  # Continue to next tool/stage
-    BLOCK = "block"  # Stop processing, return error immediately
+    CONTINUE = "continue"  # Continue to next tool/stage (nothing detected)
+    DETECTED = "detected"  # Something detected but no action taken (flagged for monitoring)
     MODIFY = "modify"  # Content was modified, continue processing
+    BLOCK = "block"  # Stop processing, return error immediately
 
 
 class ToolResult(BaseModel):
@@ -26,6 +27,10 @@ class ToolResult(BaseModel):
     )
     action: ToolAction = Field(
         ..., description="Action to take after this tool execution"
+    )
+    action_description: str = Field(
+        default="",
+        description="Human-readable description of what action was taken"
     )
     flags: List[str] = Field(
         default_factory=list, description="Flags/warnings from tool execution"

@@ -63,12 +63,19 @@ class PIIDetector(AITool):
             flags.append("pii_ssn_detected")
             logger.info(f"Detected {len(ssns)} SSN(s)")
 
-        action = ToolAction.MODIFY if pii_found else ToolAction.CONTINUE
+        if pii_found:
+            pii_summary = ", ".join([f"{count} {ptype}" for ptype, count in pii_found.items()])
+            action_desc = f"MODIFIED: PII redacted ({pii_summary})"
+            action = ToolAction.MODIFY
+        else:
+            action_desc = "No PII detected in prompt"
+            action = ToolAction.CONTINUE
 
         return ToolResult(
             modified_content=modified,
             state={**state, "pii_detected": pii_found},
             action=action,
+            action_description=action_desc,
             flags=flags,
             metadata={"pii_types": list(pii_found.keys())},
         )

@@ -57,6 +57,7 @@ class PromptInjectionDetector(AITool):
                 modified_content=content,
                 state={**state, "injection_detected": injections},
                 action=ToolAction.BLOCK,
+                action_description=f"BLOCKED: Prompt injection detected ({len(injections)} pattern(s) matched)",
                 flags=flags,
                 metadata={"injections": injections},
             )
@@ -65,5 +66,6 @@ class PromptInjectionDetector(AITool):
             modified_content=content,
             state=state,
             action=ToolAction.CONTINUE,
+            action_description="No prompt injection patterns detected",
             flags=[],
         )

@@ -57,6 +57,11 @@ class AISlopDetector(AITool):
             logger.debug(
                 f"Detected {len(detected)} slop phrases: {detected}"
             )
+            action_type = ToolAction.DETECTED
+            action_desc = f"DETECTED: {len(detected)} generic AI phrases (slop_score: {slop_score:.0%})"
+        else:
+            action_type = ToolAction.CONTINUE
+            action_desc = "No generic AI phrases detected in response"
 
         return ToolResult(
             modified_content=content,
@@ -65,7 +70,8 @@ class AISlopDetector(AITool):
                 "slop_detected": detected,
                 "slop_score": slop_score,
             },
-            action=ToolAction.CONTINUE,
+            action=action_type,
+            action_description=action_desc,
             flags=flags,
             metadata={
                 "slop_phrases": detected,
