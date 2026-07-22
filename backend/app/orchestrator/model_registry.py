@@ -144,13 +144,25 @@ class ModelRegistry:
             )
 
         matches = []
-        logger.debug(f"Evaluating {len(self.models)} models for routing")
+        logger.info(f"🔍 RULE-BASED ROUTING: Evaluating {len(self.models)} models")
+        logger.info(f"🔍 Prompt: {prompt[:100]}")
 
         # Evaluate each model
         for model in self.models:
+            logger.info(f"🔍 Checking model: {model.name} (priority={model.priority}, enabled={model.enabled})")
+            
+            if not model.enabled:
+                logger.info(f"🔍   ↳ SKIP: {model.name} is DISABLED")
+                continue
+            
             try:
                 should_route, confidence, reason = model.should_route_to_me(
                     prompt, context
+                )
+
+                logger.info(
+                    f"🔍   ↳ {model.name}: should_route={should_route}, "
+                    f"confidence={confidence:.2f}, reason='{reason}'"
                 )
 
                 if should_route:
@@ -163,9 +175,8 @@ class ModelRegistry:
                             "reason": reason,
                         }
                     )
-                    logger.debug(
-                        f"Model {model.name} matches: "
-                        f"priority={model.priority}, confidence={confidence:.2f}"
+                    logger.info(
+                        f"🔍   ✓ MATCH: {model.name} (priority={model.priority}, confidence={confidence:.2f})"
                     )
 
             except Exception as e:
@@ -175,7 +186,7 @@ class ModelRegistry:
 
         # Select best match
         if not matches:
-            logger.info("No models matched the prompt")
+            logger.info("🔍 ⚠️  NO MODELS MATCHED - LLM classifier will be used")
             return RoutingDecision(
                 model="",
                 confidence=0.0,
@@ -191,10 +202,16 @@ class ModelRegistry:
         )[0]
 
         logger.info(
-            f"Best model match: {best_match['model'].name} "
-            f"(priority={best_match['priority']}, "
-            f"confidence={best_match['confidence']:.2f})"
+            f"🔍 ✅ SELECTED: {best_match['model'].name} "
+            f"(priority={best_match['priority']}, confidence={best_match['confidence']:.2f})"
         )
+        
+        logger.info(f"🔍 All matches in priority order:")
+        for match in sorted(matches, key=lambda m: (m["priority"], m["confidence"]), reverse=True):
+            logger.info(
+                f"🔍   - {match['model'].name}: priority={match['priority']}, "
+                f"confidence={match['confidence']:.2f}"
+            )
 
         return RoutingDecision(
             model=best_match["model_id"],
