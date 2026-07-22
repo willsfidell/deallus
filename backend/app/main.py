@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db import init_db
 from app.orchestrator import HybridOrchestrator
+from app.orchestrator.model_registry import model_registry
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
 
+    # Discover and load model definitions
+    try:
+        model_registry.discover_models()
+        logger.info(f"Model definitions loaded: {len(model_registry.models)} models registered")
+    except Exception as e:
+        logger.error(f"Failed to discover model definitions: {e}")
+
     # Discover and load tools
     try:
         from app.tools.registry import tool_registry
@@ -50,6 +58,8 @@ async def lifespan(app: FastAPI):
         rule_confidence_threshold=settings.RULE_CONFIDENCE_THRESHOLD,
         llm_confidence_threshold=settings.LLM_CONFIDENCE_THRESHOLD,
     )
+    # Inject the discovered models into the orchestrator
+    orchestrator.model_registry = model_registry
     logger.info("Orchestrator initialized")
 
     yield

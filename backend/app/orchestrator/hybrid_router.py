@@ -1,4 +1,4 @@
-"""Hybrid orchestrator that combines rule-based and LLM-based routing."""
+"""Hybrid orchestrator that combines model-based and LLM-based routing."""
 
 import asyncio
 import json
@@ -6,7 +6,8 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
-from app.orchestrator.rule_router import RuleRouter, RoutingDecision
+from app.orchestrator.model_registry import ModelRegistry
+from app.orchestrator.rule_router import RoutingDecision
 from app.orchestrator.llm_classifier import LLMClassifier, LLMClassifierResult
 from app.services import get_llm_service, LLMError
 
@@ -23,12 +24,12 @@ class OrchestrationResult:
 
 class HybridOrchestrator:
     """
-    Hybrid orchestrator combining rule-based and LLM-based routing.
+    Hybrid orchestrator combining model-based and LLM-based routing.
 
     Decision flow:
-    1. Run rule-based router on prompt
-    2. If confidence above threshold → use that model
-    3. If confidence below threshold → run LLM classifier
+    1. Use ModelRegistry to evaluate pluggable model definitions
+    2. If model confidence above threshold → use that model
+    3. If model confidence below threshold → run LLM classifier
     4. Use LLM's decision as final routing
     """
 
@@ -45,7 +46,7 @@ class HybridOrchestrator:
         Args:
             text_model: Model for general text generation
             classifier_model: Model for classification tasks
-            rule_confidence_threshold: Min confidence for rule-based decision
+            rule_confidence_threshold: Min confidence for model-based decision
             llm_confidence_threshold: Min confidence for LLM decision
         """
         self.text_model = text_model
@@ -53,11 +54,8 @@ class HybridOrchestrator:
         self.rule_confidence_threshold = rule_confidence_threshold
         self.llm_confidence_threshold = llm_confidence_threshold
 
-        self.rule_router = RuleRouter(
-            text_model=text_model,
-            classifier_model=classifier_model,
-            confidence_threshold=rule_confidence_threshold,
-        )
+        # Initialize model registry (models are discovered elsewhere)
+        self.model_registry = ModelRegistry()
 
         self.llm_classifier = LLMClassifier(
             classifier_model=classifier_model,
@@ -82,34 +80,40 @@ class HybridOrchestrator:
             "steps": [],
         }
 
-        # Step 1: Rule-based routing
-        rule_decision = self.rule_router.route(prompt)
+        # Step 1: Model registry routing
+        model_decision = self.model_registry.route(prompt)
         reasoning["steps"].append({
-            "stage": "rule_based",
-            "model": rule_decision.model,
-            "confidence": rule_decision.confidence,
-            "reason": rule_decision.reason,
+            "stage": "model_registry",
+            "model": model_decision.model,
+            "confidence": model_decision.confidence,
+            "reason": model_decision.reason,
         })
 
         logger.info(
-            f"Rule-based routing result: model={rule_decision.model}, "
-            f"confidence={rule_decision.confidence:.2f}"
+            f"Model registry routing result: model={model_decision.model}, "
+            f"confidence={model_decision.confidence:.2f}"
         )
 
-        # Step 2: Check if rule confidence is sufficient
-        if not self.rule_router.should_use_llm_classifier(rule_decision):
-            logger.info(f"Rule-based decision accepted (confidence: {rule_decision.confidence:.2f})")
+        # Step 2: Check if model confidence is sufficient
+        if (
+            not model_decision.requires_llm_classification
+            and model_decision.confidence >= self.rule_confidence_threshold
+        ):
+            logger.info(
+                f"Model registry decision accepted (confidence: {model_decision.confidence:.2f})"
+            )
             return OrchestrationResult(
-                model=rule_decision.model,
+                model=model_decision.model,
                 reasoning=reasoning,
-                confidence=rule_decision.confidence,
+                confidence=model_decision.confidence,
             )
 
         # Step 3: Use LLM classifier for final decision
-        logger.info(f"LLM classification needed (rule confidence: {rule_decision.confidence:.2f})")
+        logger.info(
+            f"LLM classification needed "
+            f"(model confidence: {model_decision.confidence:.2f})"
+        )
 
-        # For now, we'll use a simulated LLM response
-        # In production, this would call the actual LLM via LiteLLM
         llm_decision = await self._run_llm_classification(prompt)
 
         reasoning["steps"].append({
