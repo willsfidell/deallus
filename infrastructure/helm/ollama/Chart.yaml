@@ -1,0 +1,12 @@
+apiVersion: v2
+name: ollama
+description: Helm chart for Ollama GPU workload
+type: application
+version: 1.0.0
+appVersion: "latest"
+keywords:
+  - ollama
+  - gpu
+  - llm
+maintainers:
+  - name: Deallus Team

@@ -1,0 +1,80 @@
+replicaCount: 1
+
+image:
+  repository: ollama/ollama
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: false
+  runAsUser: 0
+
+service:
+  type: ClusterIP
+  port: 11434
+  targetPort: 11434
+
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    cpu: 4000m
+    memory: 16Gi
+  requests:
+    nvidia.com/gpu: 1
+    cpu: 2000m
+    memory: 8Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+
+nodeSelector:
+  workload: gpu
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+affinity: {}
+
+# Persistence configuration
+persistence:
+  enabled: true
+  storageClass: "efs-sc"
+  accessMode: ReadWriteMany
+  size: 100Gi
+  mountPath: /root/.ollama
+
+# Model preloading
+models:
+  preload:
+    - llama2
+  downloadTimeout: "600"
+
+# Environment variables
+env:
+  OLLAMA_NUM_PARALLEL: "1"
+  OLLAMA_NUM_GPU: "1"

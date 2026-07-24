@@ -1,0 +1,53 @@
+# Terraform / OpenTofu
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Environment files
+*.tfvars
+!terraform.tfvars.example
+!terraform.tfvars.sample
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Secrets and sensitive data
+**/*secret*
+**/*password*
+**/*key*
+!*secret*.example
+!*password*.example
+
+# Logs
+*.log
+
+# Build artifacts
+*.zip
+*.tar.gz
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Generated files
+*.backup
+*.auto.tfvars
+helm-values-*.yaml
+kubeconfig-*

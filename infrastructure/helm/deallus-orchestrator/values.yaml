@@ -1,0 +1,108 @@
+replicaCount: 2
+
+image:
+  repository: deallus-backend
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: ""
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 8000
+  targetPort: 8000
+
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: client1-xyzab-node.deallus.ai
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: deallus-tls
+      hosts:
+        - client1-xyzab-node.deallus.ai
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+
+nodeSelector:
+  workload: orchestrator
+
+tolerations: []
+
+affinity: {}
+
+# Database configuration
+database:
+  host: ""
+  port: 5432
+  name: deallus
+  username: deallus_admin
+  secretName: deallus-db-connection
+  secretKey: connection-string
+
+# Redis configuration
+redis:
+  host: ""
+  port: 6379
+  ttl: 3600
+
+# Environment variables
+env:
+  LOG_LEVEL: INFO
+  ENVIRONMENT: production
+
+# Migration job configuration
+migration:
+  enabled: true
+  image:
+    repository: deallus-backend
+    tag: "latest"
+  serviceAccount:
+    create: true
+    name: deallus-migration
+
+# Secrets
+secrets:
+  create: false
+  name: deallus-secrets

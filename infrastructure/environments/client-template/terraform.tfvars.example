@@ -1,0 +1,12 @@
+aws_region         = "us-east-1"
+client_id          = "client1"
+client_account_id  = "123456789012"  # Replace with actual AWS account ID
+root_zone_id       = "Z1234567890ABC"  # Replace with actual Route53 zone ID
+root_zone_name     = "deallus.ai"
+
+# Customize below as needed
+orchestrator_desired_size = 2
+gpu_desired_size          = 1
+db_instance_class         = "db.t3.micro"
+db_allocated_storage      = 20
+redis_node_type           = "cache.t3.micro"
