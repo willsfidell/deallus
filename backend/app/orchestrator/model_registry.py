@@ -6,6 +6,7 @@ import inspect
 import os
 from typing import List, Optional
 
+from app.config import settings
 from app.orchestrator.model_base import BaseModelDefinition
 from app.orchestrator.rule_router import RoutingDecision
 
@@ -118,9 +119,16 @@ class ModelRegistry:
 
         Algorithm:
         1. Evaluate all enabled models in priority order
-        2. Collect models where should_route_to_me() returns True
-        3. Select best match by priority + confidence
-        4. If no matches or low confidence, mark for LLM classification
+        2. Apply continuity bonus to previous model if available
+        3. Collect models where should_route_to_me() returns True
+        4. Select best match by priority + confidence
+        5. If no matches or low confidence, mark for LLM classification
+
+        Continuity Bonus:
+        - If conversation has a previous model and context is enabled,
+          apply +CONTINUITY_BONUS to that model's confidence
+        - This maintains task continuity across multi-turn conversations
+        - Strong topic switches still override the bonus
 
         Tie-breaking rules:
         - Higher priority wins
@@ -130,6 +138,7 @@ class ModelRegistry:
         Args:
             prompt: User prompt to route
             context: Optional context information
+                    - Keys: "previous_model" (str)
 
         Returns:
             RoutingDecision with selected model and reasoning
@@ -142,6 +151,13 @@ class ModelRegistry:
                 reason="No models available (discovery failed?)",
                 requires_llm_classification=True,
             )
+
+        # Extract previous model from context
+        previous_model = None
+        if context and settings.CONTINUITY_ENABLED:
+            previous_model = context.get("previous_model")
+            if previous_model:
+                logger.info(f"🔗 Previous model: {previous_model} (bonus: +{settings.CONTINUITY_BONUS})")
 
         matches = []
         logger.info(f"🔍 RULE-BASED ROUTING: Evaluating {len(self.models)} models")
@@ -160,9 +176,22 @@ class ModelRegistry:
                     prompt, context
                 )
 
+                # Apply continuity bonus to previous model
+                original_confidence = confidence
+                bonus_applied = False
+
+                if previous_model and model.model_id == previous_model and should_route:
+                    confidence = min(confidence + settings.CONTINUITY_BONUS, 0.99)
+                    bonus_applied = True
+                    reason = f"[Continuing] {reason}"
+                    logger.info(
+                        f"🔗 Continuity bonus: {model.name} {original_confidence:.2f} → {confidence:.2f}"
+                    )
+
                 logger.info(
                     f"🔍   ↳ {model.name}: should_route={should_route}, "
-                    f"confidence={confidence:.2f}, reason='{reason}'"
+                    f"confidence={confidence:.2f}"
+                    + (f" (bonus: +{settings.CONTINUITY_BONUS:.2f})" if bonus_applied else "")
                 )
 
                 if should_route:
@@ -172,6 +201,8 @@ class ModelRegistry:
                             "model_id": model.model_id,
                             "priority": model.priority,
                             "confidence": confidence,
+                            "original_confidence": original_confidence,
+                            "bonus_applied": bonus_applied,
                             "reason": reason,
                         }
                     )
@@ -203,7 +234,8 @@ class ModelRegistry:
 
         logger.info(
             f"🔍 ✅ SELECTED: {best_match['model'].name} "
-            f"(priority={best_match['priority']}, confidence={best_match['confidence']:.2f})"
+            f"(priority={best_match['priority']}, confidence={best_match['confidence']:.2f}"
+            + (", with continuity bonus" if best_match['bonus_applied'] else "") + ")"
         )
         
         logger.info(f"🔍 All matches in priority order:")
@@ -211,6 +243,7 @@ class ModelRegistry:
             logger.info(
                 f"🔍   - {match['model'].name}: priority={match['priority']}, "
                 f"confidence={match['confidence']:.2f}"
+                + (", with continuity bonus" if match['bonus_applied'] else "")
             )
 
         return RoutingDecision(

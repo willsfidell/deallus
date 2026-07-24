@@ -5,6 +5,7 @@ import logging
 import time
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header, status
 from sqlalchemy.orm import Session
@@ -13,7 +14,8 @@ from app.db import get_db
 from app.auth import verify_api_key
 from app.models.schemas import ProcessRequest, ProcessResponse
 from app.tools.registry import tool_registry
-from app.services import get_llm_service, LLMError
+from app.services import get_llm_service, LLMError, ContextManager, RedisService
+from app.services.conversation_service import ConversationService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -42,27 +44,77 @@ async def process(
     db: Session = Depends(get_db),
 ) -> ProcessResponse:
     """
-    Process a prompt using AIDI.
+    Process a prompt using Deallus orchestrator.
 
     This endpoint:
-    1. Runs pre-prompt tools (PII redaction, etc.)
-    2. Routes prompt to appropriate model
-    3. Generates response
-    4. Runs post-result tools (slop detection, etc.)
-    5. Returns result
+    1. Creates or loads conversation context (if conversation_id provided)
+    2. Runs pre-prompt tools (PII redaction, etc.)
+    3. Routes prompt to appropriate model (with continuity bonus if in conversation)
+    4. Generates response using context if available
+    5. Runs post-result tools (slop detection, etc.)
+    6. Stores messages in conversation if provided
+    7. Returns result with metadata
 
     Args:
-        request: Process request with prompt
+        request: Process request with prompt, optional conversation_id, optional force_model
         user: Authenticated user (from API key verification)
         db: Database session
 
     Returns:
-        Process response with result and metadata
+        Process response with result, conversation metadata, and routing explanation
     """
     start_time = time.time()
     request_id = str(uuid.uuid4())
+    conversation_id = request.conversation_id
+    routing_reason = None
+    continuity_applied = False
+    context_used = 0
+    total_tokens = 0
 
     try:
+        # Initialize services
+        redis_service = await RedisService.get_instance()
+        context_manager = ContextManager(redis_service)
+        conversation_service = ConversationService(redis_service)
+
+        # Step 0: Handle conversation context
+        if conversation_id:
+            # Validate that conversation belongs to user
+            conversation = conversation_service.get_conversation(
+                conversation_id, user.id, db
+            )
+            if not conversation:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Conversation not found or not owned by user",
+                )
+
+            logger.info(
+                f"[{request_id}] Loading conversation context: {conversation_id}"
+            )
+
+            # Load context
+            context_data = await context_manager.get_conversation_context(
+                conversation_id, db
+            )
+            context_used = context_data.get("message_count", 0)
+            total_tokens = context_data.get("total_tokens", 0)
+            previous_model = context_data.get("last_model_used")
+
+            logger.info(
+                f"[{request_id}] Conversation context: "
+                f"{context_used} messages, {total_tokens} tokens, "
+                f"previous_model={previous_model}"
+            )
+        else:
+            previous_model = None
+            # Create new conversation
+            conversation = conversation_service.create_conversation(
+                user_id=user.id, db=db
+            )
+            conversation_id = conversation.id
+            logger.info(f"[{request_id}] Created new conversation: {conversation_id}")
+
         # Step 1: Run pre-prompt tools
         logger.info(f"[{request_id}] Processing prompt from user {user.email}")
         logger.info(f"[{request_id}] Running pre-prompt tools")
@@ -99,7 +151,7 @@ async def process(
                 detail=f"Tool execution error: {str(e)}",
             )
 
-        # Step 2: Route to model
+        # Step 2: Route to model (with contextual routing if previous_model exists)
         logger.info(f"[{request_id}] Routing prompt to model")
 
         # Import orchestrator at runtime to ensure it's initialized
@@ -111,14 +163,29 @@ async def process(
                 detail="Orchestrator not initialized",
             )
 
-        # Use orchestrator to determine model
-        orchestration_result = await orchestrator.route(modified_prompt)
-        model_to_use = orchestration_result.model
+        # Check for forced model first
+        if request.force_model:
+            model_to_use = request.force_model
+            routing_reason = "User specified model"
+            logger.info(f"[{request_id}] Using forced model: {model_to_use}")
+        else:
+            # Use orchestrator with previous model context for continuity
+            orchestration_result = await orchestrator.route(
+                modified_prompt,
+                previous_model=previous_model,
+            )
+            model_to_use = orchestration_result.model
+            routing_reason = orchestration_result.reason
+            continuity_applied = (
+                previous_model is not None
+                and "[Continuing]" in orchestration_result.reason
+            )
 
-        logger.info(
-            f"[{request_id}] Routed to model: {model_to_use} "
-            f"(confidence: {orchestration_result.confidence:.2f})"
-        )
+            logger.info(
+                f"[{request_id}] Routed to model: {model_to_use} "
+                f"(confidence: {orchestration_result.confidence:.2f}, "
+                f"continuity: {continuity_applied})"
+            )
 
         # Step 3: Generate response using LLM
         logger.info(f"[{request_id}] Calling model: {model_to_use}")
@@ -131,7 +198,9 @@ async def process(
                 max_tokens=500,
                 temperature=0.7,
             )
-            logger.info(f"[{request_id}] Model response received ({len(llm_response)} chars)")
+            logger.info(
+                f"[{request_id}] Model response received ({len(llm_response)} chars)"
+            )
 
         except LLMError as e:
             logger.error(f"[{request_id}] LLM generation failed: {e}")
@@ -171,6 +240,39 @@ async def process(
             # Don't fail the request on post-result tool error
             final_response = llm_response
 
+        # Step 5: Store messages in conversation
+        logger.info(f"[{request_id}] Storing messages in conversation")
+
+        try:
+            # Store user message
+            user_token_count = context_manager.estimate_tokens(modified_prompt)
+            conversation_service.add_message(
+                conversation_id=conversation_id,
+                role="user",
+                content=request.prompt,  # Store original prompt
+                db=db,
+                token_count=user_token_count,
+                tool_executions=tools_executed,
+            )
+
+            # Store assistant message
+            assistant_token_count = context_manager.estimate_tokens(final_response)
+            conversation_service.add_message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=final_response,
+                db=db,
+                model_used=model_to_use,
+                token_count=assistant_token_count,
+                tool_executions=[],
+            )
+
+            logger.info(f"[{request_id}] Messages stored in conversation")
+
+        except Exception as e:
+            logger.error(f"[{request_id}] Error storing conversation messages: {e}")
+            # Don't fail the request if message storage fails
+
         # Calculate execution time
         execution_time_ms = (time.time() - start_time) * 1000
 
@@ -181,12 +283,17 @@ async def process(
         # Return response
         return ProcessResponse(
             request_id=request_id,
+            conversation_id=conversation_id,
             model_used=model_to_use,
+            routing_reason=routing_reason,
+            continuity_applied=continuity_applied,
             prompt=request.prompt,
             response=final_response,
             execution_time_ms=execution_time_ms,
             tools_executed=tools_executed,
             tool_flags=tool_state.get("tool_flags", {}),
+            context_used=context_used,
+            total_tokens=total_tokens if total_tokens > 0 else None,
         )
 
     except HTTPException:

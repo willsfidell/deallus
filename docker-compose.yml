@@ -73,7 +73,7 @@ services:
 #      CLASSIFIER_MODEL: ollama/llama3.2:3b
       TEXT_MODEL: ollama/llama2
       CLASSIFIER_MODEL: ollama/llama2
-      DEBUG: ${DEBUG:-false}
+      DEBUG: ${DEBUG:-true}
       API_HOST: 0.0.0.0
       API_PORT: 8000
     ports:

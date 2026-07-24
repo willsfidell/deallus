@@ -1,4 +1,4 @@
-"""AIDI FastAPI application factory."""
+"""Deallus FastAPI application factory."""
 
 import logging
 from contextlib import asynccontextmanager
@@ -10,6 +10,7 @@ from app.config import settings
 from app.db import init_db
 from app.orchestrator import HybridOrchestrator
 from app.orchestrator.model_registry import model_registry
+from app.services.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,13 @@ async def lifespan(app: FastAPI):
         logger.info("Database initialized")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
+
+    # Initialize Redis
+    try:
+        await RedisService.initialize(settings.REDIS_URL)
+        logger.info("Redis initialized")
+    except Exception as e:
+        logger.warning(f"Redis initialization failed (system will use PostgreSQL only): {e}")
 
     # Discover and load model definitions
     try:
@@ -65,7 +73,14 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    logger.info("Shutting down AIDI")
+    logger.info("Shutting down Deallus")
+
+    # Close Redis connection
+    try:
+        redis_service = await RedisService.get_instance()
+        await redis_service.close()
+    except Exception as e:
+        logger.warning(f"Error closing Redis: {e}")
 
 
 def create_app() -> FastAPI:
@@ -92,10 +107,11 @@ def create_app() -> FastAPI:
     )
 
     # Import and register routers
-    from app.api import health_router, auth_router, process_router
+    from app.api import health_router, auth_router, process_router, conversation_router
 
     app.include_router(health_router.router, prefix="/api/health", tags=["health"])
     app.include_router(auth_router.router, prefix="/api/auth", tags=["auth"])
     app.include_router(process_router.router, prefix="/api/process", tags=["process"])
+    app.include_router(conversation_router.router, prefix="/api", tags=["conversations"])
 
     return app

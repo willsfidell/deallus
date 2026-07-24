@@ -15,7 +15,17 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql://aidi:password@localhost:5432/aidi"
 
-    # Ollama
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379/0"
+
+    # Conversation Context Management
+    CONTEXT_MAX_MESSAGES: int = 10  # Maximum messages to include in context
+    CONTEXT_MAX_TOKENS: int = 4000  # Maximum tokens in context window
+    TOKEN_ESTIMATE_MULTIPLIER: float = 0.25  # ~4 chars per token
+
+    # Contextual Routing
+    CONTINUITY_BONUS: float = 0.15  # Confidence boost for previous model
+    CONTINUITY_ENABLED: bool = True  # Enable contextual routing
     OLLAMA_BASE_URL: str = "http://localhost:11434"
 
     # Models
