@@ -81,13 +81,17 @@ class ApiService {
   Future<ProcessResponse> processMessage({
     required String message,
     String? conversationId,
+    String? model,
+    bool forceModel = false,
   }) async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
         AppEndpoints.process,
         data: {
-          'message': message,
+          'prompt': message,
+          if (model != null) 'model': model,
           if (conversationId != null) 'conversation_id': conversationId,
+          if (forceModel) 'force_model': forceModel,
         },
       );
       return ProcessResponse.fromJson(response.data!);
@@ -125,15 +129,15 @@ class ApiService {
     }
   }
 
-  /// Get messages for a conversation
+  /// Get messages for a conversation (fetches the full conversation object)
   Future<Map<String, dynamic>> getMessages(
     String conversationId, {
     int page = 1,
     int pageSize = 20,
   }) async {
     try {
-      final endpoint = AppEndpoints.messages
-          .replaceFirst('{id}', conversationId);
+      // The messages are returned as part of the conversation object
+      final endpoint = '${AppEndpoints.conversations}/$conversationId';
       
       final response = await _dio.get<Map<String, dynamic>>(
         endpoint,
@@ -142,6 +146,8 @@ class ApiService {
           'page_size': pageSize,
         },
       );
+      
+      // Return the response which includes messages array
       return response.data ?? {};
     } on DioException catch (e) {
       throw ApiException.from(e);
@@ -156,7 +162,7 @@ class ApiService {
   }) async {
     try {
       final formData = FormData();
-      formData.fields.add(MapEntry('message', message));
+      formData.fields.add(MapEntry('prompt', message));
       
       if (conversationId != null) {
         formData.fields.add(MapEntry('conversation_id', conversationId));

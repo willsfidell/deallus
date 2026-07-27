@@ -63,7 +63,7 @@ class HybridOrchestrator:
             confidence_threshold=llm_confidence_threshold,
         )
 
-    async def route(self, prompt: str) -> OrchestrationResult:
+    async def route(self, prompt: str, previous_model: Optional[str] = None) -> OrchestrationResult:
         """
         Route a prompt using hybrid orchestration.
 
@@ -71,6 +71,7 @@ class HybridOrchestrator:
 
         Args:
             prompt: User prompt to route
+            previous_model: Previously used model for continuity bonus
 
         Returns:
             OrchestrationResult with final model decision
@@ -80,8 +81,13 @@ class HybridOrchestrator:
             "steps": [],
         }
 
+        # Prepare context with previous model for continuity bonus
+        context = {}
+        if previous_model:
+            context["previous_model"] = previous_model
+
         # Step 1: Model registry routing
-        model_decision = self.model_registry.route(prompt)
+        model_decision = self.model_registry.route(prompt, context=context)
         reasoning["steps"].append({
             "stage": "model_registry",
             "model": model_decision.model,

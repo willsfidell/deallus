@@ -140,7 +140,7 @@ class ProcessResponse(BaseModel):
     request_id: str
     conversation_id: Optional[str] = None
     model_used: str
-    routing_reason: Optional[str] = None  # Explanation of routing decision
+    # routing_reason: Optional[str] = None  # Explanation of routing decision
     continuity_applied: bool = False  # Whether continuity bonus was applied
     prompt: str
     response: str

@@ -22,17 +22,8 @@ final currentConversationIdProvider =
   () => _CurrentConversationNotifier(),
 );
 
-/// Provider for messages in current conversation
+/// Provider for messages in current conversation - simple async provider
 final conversationMessagesProvider =
-    FutureProvider.family<List<Message>, String>(
-  (ref, conversationId) async {
-    final chatService = ref.watch(chatServiceProvider);
-    return _fetchMessagesForConversation(chatService, conversationId);
-  },
-);
-
-/// Simple provider for pagination state
-final messagePaginationProvider =
     FutureProvider.family<List<Message>, String>(
   (ref, conversationId) async {
     final chatService = ref.watch(chatServiceProvider);
@@ -52,16 +43,40 @@ Future<List<Message>> _fetchMessagesForConversation(
       pageSize: AppConstants.messagePaginationSize,
     );
 
-    final messagesResponse = MessagesResponse.fromJson(response);
-    final messages = messagesResponse.messages;
+    _logger.d('Response: $response');
+
+    // Parse the messages array from the conversation response
+    final messagesList = response['messages'] as List<dynamic>? ?? [];
+    
+    if (messagesList.isEmpty) {
+      _logger.d('No messages in conversation');
+      return [];
+    }
+
+    final messages = <Message>[];
+    for (final msg in messagesList) {
+      try {
+        if (msg is Map<String, dynamic>) {
+          final message = Message.fromJson(msg);
+          messages.add(message);
+        }
+      } catch (e) {
+        _logger.w('Failed to parse message: $msg', error: e);
+      }
+    }
 
     messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
+    _logger.d('Loaded ${messages.length} messages');
     return messages;
-  } catch (e) {
+  } catch (e, st) {
+    _logger.e('Failed to fetch messages', error: e, stackTrace: st);
     throw ConversationException(
-      message: 'Failed to fetch messages',
+      message: 'Failed to fetch messages: $e',
       originalException: e,
     );
   }
 }
+
+/// Simple alias for message list - using the conversation provider
+final messagePaginationProvider = conversationMessagesProvider;

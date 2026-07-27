@@ -6,14 +6,37 @@ part 'message.g.dart';
 @JsonSerializable()
 class Message {
   final String id;
+  
+  @JsonKey(name: 'conversation_id')
   final String conversationId;
+  
   final String role;
   final String content;
+  
+  @JsonKey(name: 'created_at')
   final DateTime timestamp;
+  
+  @JsonKey(defaultValue: [])
   final List<FileAttachment> files;
+  
+  @JsonKey(name: 'audio_url')
   final String? audioUrl;
+  
+  @JsonKey(name: 'audio_transcription')
   final String? audioTranscription;
+  
+  @JsonKey(name: 'original_content')
   final String? originalContent;
+  
+  // Additional fields from API
+  @JsonKey(name: 'model_used')
+  final String? modelUsed;
+  
+  @JsonKey(name: 'token_count')
+  final int? tokenCount;
+  
+  @JsonKey(name: 'tool_executions', defaultValue: [])
+  final List<dynamic> toolExecutions;
 
   const Message({
     required this.id,
@@ -25,6 +48,9 @@ class Message {
     this.audioUrl,
     this.audioTranscription,
     this.originalContent,
+    this.modelUsed,
+    this.tokenCount,
+    this.toolExecutions = const [],
   });
 
   factory Message.fromJson(Map<String, dynamic> json) =>
@@ -49,6 +75,9 @@ class Message {
     String? audioUrl,
     String? audioTranscription,
     String? originalContent,
+    String? modelUsed,
+    int? tokenCount,
+    List<dynamic>? toolExecutions,
   }) =>
       Message(
         id: id ?? this.id,
@@ -60,6 +89,9 @@ class Message {
         audioUrl: audioUrl ?? this.audioUrl,
         audioTranscription: audioTranscription ?? this.audioTranscription,
         originalContent: originalContent ?? this.originalContent,
+        modelUsed: modelUsed ?? this.modelUsed,
+        tokenCount: tokenCount ?? this.tokenCount,
+        toolExecutions: toolExecutions ?? this.toolExecutions,
       );
 
   @override
@@ -75,7 +107,9 @@ class Message {
           files == other.files &&
           audioUrl == other.audioUrl &&
           audioTranscription == other.audioTranscription &&
-          originalContent == other.originalContent;
+          originalContent == other.originalContent &&
+          modelUsed == other.modelUsed &&
+          tokenCount == other.tokenCount;
 
   @override
   int get hashCode =>
@@ -87,11 +121,13 @@ class Message {
       files.hashCode ^
       audioUrl.hashCode ^
       audioTranscription.hashCode ^
-      originalContent.hashCode;
+      originalContent.hashCode ^
+      modelUsed.hashCode ^
+      tokenCount.hashCode;
 
   @override
   String toString() =>
-      'Message(id: $id, conversationId: $conversationId, role: $role, content: $content, timestamp: $timestamp, files: $files, audioUrl: $audioUrl, audioTranscription: $audioTranscription, originalContent: $originalContent)';
+      'Message(id: $id, conversationId: $conversationId, role: $role, content: $content, timestamp: $timestamp, files: $files, audioUrl: $audioUrl, audioTranscription: $audioTranscription, originalContent: $originalContent, modelUsed: $modelUsed, tokenCount: $tokenCount)';
 }
 
 /// File attachment in a message
@@ -99,10 +135,17 @@ class Message {
 class FileAttachment {
   final String id;
   final String filename;
+  
+  @JsonKey(name: 'mime_type')
   final String mimeType;
+  
+  @JsonKey(name: 'size_bytes')
   final int sizeBytes;
+  
   final String? url;
   final String status;
+  
+  @JsonKey(name: 'upload_progress')
   final double? uploadProgress;
 
   const FileAttachment({

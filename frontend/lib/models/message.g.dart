@@ -8,51 +8,57 @@ part of 'message.dart';
 
 Message _$MessageFromJson(Map<String, dynamic> json) => Message(
       id: json['id'] as String,
-      conversationId: json['conversationId'] as String,
+      conversationId: json['conversation_id'] as String,
       role: json['role'] as String,
       content: json['content'] as String,
-      timestamp: DateTime.parse(json['timestamp'] as String),
+      timestamp: DateTime.parse(json['created_at'] as String),
       files: (json['files'] as List<dynamic>?)
               ?.map((e) => FileAttachment.fromJson(e as Map<String, dynamic>))
               .toList() ??
-          const [],
-      audioUrl: json['audioUrl'] as String?,
-      audioTranscription: json['audioTranscription'] as String?,
-      originalContent: json['originalContent'] as String?,
+          [],
+      audioUrl: json['audio_url'] as String?,
+      audioTranscription: json['audio_transcription'] as String?,
+      originalContent: json['original_content'] as String?,
+      modelUsed: json['model_used'] as String?,
+      tokenCount: (json['token_count'] as num?)?.toInt(),
+      toolExecutions: json['tool_executions'] as List<dynamic>? ?? [],
     );
 
 Map<String, dynamic> _$MessageToJson(Message instance) => <String, dynamic>{
       'id': instance.id,
-      'conversationId': instance.conversationId,
+      'conversation_id': instance.conversationId,
       'role': instance.role,
       'content': instance.content,
-      'timestamp': instance.timestamp.toIso8601String(),
+      'created_at': instance.timestamp.toIso8601String(),
       'files': instance.files,
-      'audioUrl': instance.audioUrl,
-      'audioTranscription': instance.audioTranscription,
-      'originalContent': instance.originalContent,
+      'audio_url': instance.audioUrl,
+      'audio_transcription': instance.audioTranscription,
+      'original_content': instance.originalContent,
+      'model_used': instance.modelUsed,
+      'token_count': instance.tokenCount,
+      'tool_executions': instance.toolExecutions,
     };
 
 FileAttachment _$FileAttachmentFromJson(Map<String, dynamic> json) =>
     FileAttachment(
       id: json['id'] as String,
       filename: json['filename'] as String,
-      mimeType: json['mimeType'] as String,
-      sizeBytes: (json['sizeBytes'] as num).toInt(),
+      mimeType: json['mime_type'] as String,
+      sizeBytes: (json['size_bytes'] as num).toInt(),
       url: json['url'] as String?,
       status: json['status'] as String? ?? 'uploaded',
-      uploadProgress: (json['uploadProgress'] as num?)?.toDouble(),
+      uploadProgress: (json['upload_progress'] as num?)?.toDouble(),
     );
 
 Map<String, dynamic> _$FileAttachmentToJson(FileAttachment instance) =>
     <String, dynamic>{
       'id': instance.id,
       'filename': instance.filename,
-      'mimeType': instance.mimeType,
-      'sizeBytes': instance.sizeBytes,
+      'mime_type': instance.mimeType,
+      'size_bytes': instance.sizeBytes,
       'url': instance.url,
       'status': instance.status,
-      'uploadProgress': instance.uploadProgress,
+      'upload_progress': instance.uploadProgress,
     };
 
 SendMessageRequest _$SendMessageRequestFromJson(Map<String, dynamic> json) =>

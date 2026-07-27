@@ -59,11 +59,8 @@ class _MessageInputState extends ConsumerState<MessageInput> {
         sendMessageProvider(params).future,
       );
 
-      // Add message to UI
-      final notifier = ref.read(
-        messagePaginationProvider(widget.conversationId).notifier,
-      );
-      notifier.addMessage(response);
+      // Refresh the message list to show the new message
+      ref.refresh(conversationMessagesProvider(widget.conversationId));
 
       // Clear input
       _messageController.clear();

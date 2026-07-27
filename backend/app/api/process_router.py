@@ -175,10 +175,10 @@ async def process(
                 previous_model=previous_model,
             )
             model_to_use = orchestration_result.model
-            routing_reason = orchestration_result.reason
+            routing_reason = orchestration_result.reasoning
             continuity_applied = (
                 previous_model is not None
-                and "[Continuing]" in orchestration_result.reason
+                and "[Continuing]" in orchestration_result.reasoning
             )
 
             logger.info(
