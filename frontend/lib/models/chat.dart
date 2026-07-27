@@ -6,15 +6,32 @@ part 'chat.g.dart';
 @JsonSerializable()
 class Chat {
   final String id;
+  
+  @JsonKey(name: 'user_id')
+  final int? userId;
+  
   final String title;
+  
+  @JsonKey(name: 'is_active')
+  final bool? isActive;
+  
+  @JsonKey(name: 'created_at')
   final DateTime createdAt;
+  
+  @JsonKey(name: 'updated_at')
   final DateTime? updatedAt;
+  
+  @JsonKey(name: 'message_count')
   final int messageCount;
+  
+  @JsonKey(name: 'last_message_preview')
   final String? lastMessagePreview;
 
   const Chat({
     required this.id,
+    this.userId,
     required this.title,
+    this.isActive,
     required this.createdAt,
     this.updatedAt,
     required this.messageCount,
@@ -27,7 +44,9 @@ class Chat {
 
   Chat copyWith({
     String? id,
+    int? userId,
     String? title,
+    bool? isActive,
     DateTime? createdAt,
     DateTime? updatedAt,
     int? messageCount,
@@ -35,7 +54,9 @@ class Chat {
   }) =>
       Chat(
         id: id ?? this.id,
+        userId: userId ?? this.userId,
         title: title ?? this.title,
+        isActive: isActive ?? this.isActive,
         createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
         messageCount: messageCount ?? this.messageCount,
@@ -48,7 +69,9 @@ class Chat {
       other is Chat &&
           runtimeType == other.runtimeType &&
           id == other.id &&
+          userId == other.userId &&
           title == other.title &&
+          isActive == other.isActive &&
           createdAt == other.createdAt &&
           updatedAt == other.updatedAt &&
           messageCount == other.messageCount &&
@@ -57,7 +80,9 @@ class Chat {
   @override
   int get hashCode =>
       id.hashCode ^
+      userId.hashCode ^
       title.hashCode ^
+      isActive.hashCode ^
       createdAt.hashCode ^
       updatedAt.hashCode ^
       messageCount.hashCode ^
@@ -65,7 +90,7 @@ class Chat {
 
   @override
   String toString() =>
-      'Chat(id: $id, title: $title, createdAt: $createdAt, updatedAt: $updatedAt, messageCount: $messageCount, lastMessagePreview: $lastMessagePreview)';
+      'Chat(id: $id, userId: $userId, title: $title, isActive: $isActive, createdAt: $createdAt, updatedAt: $updatedAt, messageCount: $messageCount, lastMessagePreview: $lastMessagePreview)';
 }
 
 /// Request to create a new conversation
@@ -99,6 +124,8 @@ class CreateChatRequest {
 class CreateChatResponse {
   final String id;
   final String title;
+  
+  @JsonKey(name: 'created_at')
   final DateTime createdAt;
 
   const CreateChatResponse({

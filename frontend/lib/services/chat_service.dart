@@ -92,9 +92,11 @@ class ChatService {
   }
 
   /// Create new conversation
-  Future<Map<String, dynamic>> createConversation() async {
+  Future<Map<String, dynamic>> createConversation({
+    String? title,
+  }) async {
     try {
-      return await _apiService.createConversation();
+      return await _apiService.createConversation(title: title);
     } catch (e) {
       _logger.e('Failed to create conversation', error: e);
       rethrow;

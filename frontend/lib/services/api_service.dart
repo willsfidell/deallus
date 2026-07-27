@@ -109,10 +109,15 @@ class ApiService {
   }
 
   /// Create a new conversation
-  Future<Map<String, dynamic>> createConversation() async {
+  Future<Map<String, dynamic>> createConversation({
+    String? title,
+  }) async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
         AppEndpoints.conversations,
+        data: {
+          'title': title,
+        },
       );
       return response.data ?? {};
     } on DioException catch (e) {

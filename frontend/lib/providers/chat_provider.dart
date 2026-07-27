@@ -61,7 +61,10 @@ final createChatProvider = FutureProvider.family<String, String?>((ref, title) a
   try {
     _logger.d('Creating new conversation with title: $title');
 
-    final response = await chatService.createConversation();
+    // Generate a default title if none provided
+    final finalTitle = title ?? 'Conversation ${DateTime.now().toLocal().toString().split('.')[0]}';
+
+    final response = await chatService.createConversation(title: finalTitle);
 
     // Parse the response
     final newChatData = CreateChatResponse.fromJson(response);
