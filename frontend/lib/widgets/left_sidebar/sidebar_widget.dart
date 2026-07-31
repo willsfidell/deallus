@@ -110,14 +110,17 @@ class SidebarWidget extends ConsumerWidget {
   ) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      barrierDismissible: false, // Prevent accidental dismissal
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Delete Conversation?'),
         content: const Text(
           'This conversation will be permanently deleted. This action cannot be undone.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              Navigator.of(dialogContext).pop(); // Use dialogContext instead of context
+            },
             child: const Text('Cancel'),
           ),
           TextButton(
@@ -125,21 +128,25 @@ class SidebarWidget extends ConsumerWidget {
               try {
                 // Use the deleteChatProvider instead of notifier
                 await ref.read(deleteChatProvider(chatId).future);
-                if (context.mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Conversation deleted')),
-                  );
+                if (dialogContext.mounted) {
+                  Navigator.of(dialogContext).pop(); // Use dialogContext
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Conversation deleted')),
+                    );
+                  }
                 }
               } catch (e) {
-                if (context.mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error deleting conversation: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
+                if (dialogContext.mounted) {
+                  Navigator.of(dialogContext).pop(); // Use dialogContext
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error deleting conversation: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
                 }
               }
             },
