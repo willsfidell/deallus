@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import logging
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
@@ -9,6 +10,8 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.db.models import User, APIKey
+
+logger = logging.getLogger(__name__)
 
 
 def hash_password(password: str) -> str:
@@ -67,6 +70,7 @@ def verify_api_key(db: Session, api_key: str) -> Optional[User]:
     try:
         # Hash the provided key
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+        logger.info(f"[verify_api_key] Computing hash for provided API key. Hash: {key_hash[:16]}...")
 
         # Look up the API key
         api_key_obj = db.query(APIKey).filter(
@@ -75,7 +79,10 @@ def verify_api_key(db: Session, api_key: str) -> Optional[User]:
         ).first()
 
         if not api_key_obj:
+            logger.warning(f"[verify_api_key] API key not found in database or inactive. Hash: {key_hash[:16]}... Returning None")
             return None
+
+        logger.info(f"[verify_api_key] API key found. User ID: {api_key_obj.user_id}")
 
         # Check if user is active
         user = db.query(User).filter(
@@ -84,15 +91,20 @@ def verify_api_key(db: Session, api_key: str) -> Optional[User]:
         ).first()
 
         if not user:
+            logger.warning(f"[verify_api_key] User {api_key_obj.user_id} not found or inactive. Returning None")
             return None
+
+        logger.info(f"[verify_api_key] User found: {user.username} (ID: {user.id}). Updating last_used_at")
 
         # Update last_used_at
         api_key_obj.last_used_at = datetime.utcnow()
         db.commit()
 
+        logger.info(f"[verify_api_key] Successfully verified API key for user {user.username}")
         return user
 
     except Exception as e:
+        logger.error(f"[verify_api_key] Exception occurred: {type(e).__name__}: {str(e)}")
         return None
 
 
