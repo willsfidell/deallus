@@ -121,6 +121,16 @@ class ChatService {
     }
   }
 
+  /// Delete a conversation
+  Future<void> deleteConversation(String conversationId) async {
+    try {
+      await _apiService.deleteConversation(conversationId);
+    } catch (e) {
+      _logger.e('Failed to delete conversation', error: e);
+      rethrow;
+    }
+  }
+
   /// Verify API is reachable
   Future<bool> verifyApiHealth() async {
     try {

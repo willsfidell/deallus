@@ -94,13 +94,19 @@ final createChatProvider = FutureProvider.family<String, String?>((ref, title) a
 
 /// Provider for deleting a chat
 final deleteChatProvider = FutureProvider.family<void, String>((ref, chatId) async {
+  final chatService = ref.watch(chatServiceProvider);
   try {
     _logger.d('Deleting conversation: $chatId');
 
-    // TODO: Add delete endpoint to backend when available
-    // For now, just invalidate the chat list to refresh
+    await chatService.deleteConversation(chatId);
 
     _logger.d('Conversation deleted: $chatId');
+
+    // Clear active chat if deleted
+    final activeChatId = ref.watch(activeChatIdProvider);
+    if (activeChatId == chatId) {
+      ref.read(activeChatIdProvider.notifier).setActiveChat(null);
+    }
 
     // Invalidate chat list to refresh
     ref.invalidate(chatListProvider);

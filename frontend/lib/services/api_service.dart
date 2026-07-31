@@ -154,6 +154,17 @@ class ApiService {
     }
   }
 
+  /// Delete a conversation
+  Future<void> deleteConversation(String conversationId) async {
+    try {
+      await _dio.delete(
+        '${AppEndpoints.conversations}/$conversationId',
+      );
+    } on DioException catch (e) {
+      throw ApiException.from(e);
+    }
+  }
+
   /// Upload file(s) with a message
   Future<ProcessResponse> uploadFilesWithMessage({
     required String message,
