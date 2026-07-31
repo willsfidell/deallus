@@ -2,7 +2,7 @@
 class AppConstants {
   // API Configuration
   static const String defaultApiUrl = 'http://localhost:8000';
-  static const Duration apiTimeout = Duration(seconds: 30);
+  static const Duration apiTimeout = Duration(seconds: 300); // 5 minutes for LLM processing + summarization
   static const String apiKeyHeader = 'X-API-Key';
 
   // Audio Recording

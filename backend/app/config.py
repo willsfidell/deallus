@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     CONTEXT_MAX_TOKENS: int = 4000  # Maximum tokens in context window
     TOKEN_ESTIMATE_MULTIPLIER: float = 0.25  # ~4 chars per token
 
+    # Automatic Summarization
+    SUMMARIZATION_ENABLED: bool = True  # Enable auto-summarization when approaching token limit
+    SUMMARIZATION_THRESHOLD: float = 0.75  # Summarize when X% of token limit reached (0.75 = 75%)
+    SUMMARIZATION_TARGET_RATIO: float = 0.50  # Reduce context to X% of max tokens after summarization (0.50 = 50%)
+    SUMMARIZATION_MODEL: str = "ollama/llama2"  # Model to use for summarization
+    SUMMARIZATION_MIN_MESSAGES: int = 3  # Minimum messages needed before summarization
+
     # Contextual Routing
     CONTINUITY_BONUS: float = 0.15  # Confidence boost for previous model
     CONTINUITY_ENABLED: bool = True  # Enable contextual routing

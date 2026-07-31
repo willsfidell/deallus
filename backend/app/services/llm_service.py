@@ -1,7 +1,7 @@
 """LLM service layer using LiteLLM for unified model access."""
 
 import logging
-from typing import Optional
+from typing import Optional, List, Dict
 import asyncio
 
 from litellm import completion, acompletion
@@ -38,6 +38,7 @@ class LLMService:
         max_tokens: int = 500,
         temperature: float = 0.7,
         system_prompt: Optional[str] = None,
+        conversation_messages: Optional[List[Dict]] = None,
     ) -> str:
         """
         Generate text using the specified model.
@@ -47,7 +48,9 @@ class LLMService:
             model: Model name (e.g., "ollama/llama3.2:8b")
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature (0-2)
-            system_prompt: Optional system prompt
+            system_prompt: Optional system prompt (ignored if conversation_messages provided)
+            conversation_messages: Optional list of message dicts for multi-turn conversation
+                                  If provided, current prompt is appended as new user message
 
         Returns:
             Generated text
@@ -58,9 +61,25 @@ class LLMService:
         try:
             # Build messages
             messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": prompt})
+            
+            if conversation_messages:
+                # Multi-turn conversation mode: use provided history
+                messages = conversation_messages.copy()
+                # Append current prompt as new user message
+                messages.append({"role": "user", "content": prompt})
+                logger.info(
+                    f"[Multi-turn mode] Using conversation context: "
+                    f"{len(messages)} messages (including new prompt)"
+                )
+            else:
+                # Single-turn mode: build fresh message array
+                if system_prompt:
+                    messages.append({"role": "system", "content": system_prompt})
+                messages.append({"role": "user", "content": prompt})
+                logger.info(
+                    f"[Single-turn mode] No conversation context, "
+                    f"using {len(messages)} message(s)"
+                )
 
             logger.debug(f"Generating with model={model}, max_tokens={max_tokens}")
 
@@ -108,6 +127,7 @@ class LLMService:
         max_tokens: int = 500,
         temperature: float = 0.7,
         system_prompt: Optional[str] = None,
+        conversation_messages: Optional[List[Dict]] = None,
     ) -> str:
         """
         Generate text synchronously (blocking).
@@ -117,7 +137,8 @@ class LLMService:
             model: Model name
             max_tokens: Maximum tokens
             temperature: Sampling temperature
-            system_prompt: Optional system prompt
+            system_prompt: Optional system prompt (ignored if conversation_messages provided)
+            conversation_messages: Optional list of message dicts for multi-turn conversation
 
         Returns:
             Generated text
@@ -125,9 +146,25 @@ class LLMService:
         try:
             # Build messages
             messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": prompt})
+            
+            if conversation_messages:
+                # Multi-turn conversation mode: use provided history
+                messages = conversation_messages.copy()
+                # Append current prompt as new user message
+                messages.append({"role": "user", "content": prompt})
+                logger.info(
+                    f"[Multi-turn mode - sync] Using conversation context: "
+                    f"{len(messages)} messages (including new prompt)"
+                )
+            else:
+                # Single-turn mode: build fresh message array
+                if system_prompt:
+                    messages.append({"role": "system", "content": system_prompt})
+                messages.append({"role": "user", "content": prompt})
+                logger.info(
+                    f"[Single-turn mode - sync] No conversation context, "
+                    f"using {len(messages)} message(s)"
+                )
 
             logger.debug(f"Generating (sync) with model={model}")
 

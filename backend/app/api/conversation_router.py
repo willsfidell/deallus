@@ -26,14 +26,17 @@ async def verify_api_key_header(
     db: Session = Depends(get_db),
 ):
     """Dependency to verify API key from header."""
+    logger.info(f"[verify_api_key_header] Received X-API-Key header. Key starts with: {x_api_key[:20] if x_api_key else 'NONE'}...")
     user = verify_api_key(db=db, api_key=x_api_key)
 
     if not user:
+        logger.error(f"[verify_api_key_header] API key verification failed. Raising 401 HTTPException")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
         )
 
+    logger.info(f"[verify_api_key_header] API key verified successfully for user {user.username}")
     return user
 
 

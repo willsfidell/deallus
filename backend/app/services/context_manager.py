@@ -220,6 +220,162 @@ class ContextManager:
             await self.redis.delete(cache_key)
             logger.debug(f"♻️  Invalidated context cache: {conversation_id}")
 
+    async def summarize_old_messages(
+        self,
+        conversation_id: str,
+        db: Session,
+    ) -> Optional[str]:
+        """
+        Summarize old messages in conversation when approaching token limit.
+
+        Strategy:
+        1. Load all messages chronologically
+        2. Calculate cumulative tokens and determine which messages to summarize
+        3. Ask LLM to create factual, bullet-point summary
+        4. Replace old messages with single summary message (with system role)
+        5. Return summary text (or None if no summarization occurred)
+
+        Args:
+            conversation_id: Conversation ID
+            db: Database session
+
+        Returns:
+            Summary text if summarization occurred, None otherwise
+        """
+        try:
+            # Load all messages chronologically
+            messages = db.query(Message).filter(
+                Message.conversation_id == conversation_id
+            ).order_by(Message.created_at).all()
+
+            if len(messages) < settings.SUMMARIZATION_MIN_MESSAGES:
+                logger.debug(
+                    f"Too few messages ({len(messages)}) to summarize. "
+                    f"Minimum: {settings.SUMMARIZATION_MIN_MESSAGES}"
+                )
+                return None
+
+            # Calculate total tokens
+            total_tokens = sum(msg.token_count or self.estimate_tokens(msg.content) for msg in messages)
+            threshold = settings.CONTEXT_MAX_TOKENS * settings.SUMMARIZATION_THRESHOLD
+
+            if total_tokens <= threshold:
+                logger.debug(
+                    f"Token limit not exceeded: {total_tokens} <= {threshold}"
+                )
+                return None
+
+            # Calculate target token count
+            target_tokens = settings.CONTEXT_MAX_TOKENS * settings.SUMMARIZATION_TARGET_RATIO
+
+            # Determine which messages to summarize (oldest first, until we reach target)
+            messages_to_summarize = []
+            cumulative_tokens = 0
+
+            for msg in messages:
+                msg_tokens = msg.token_count or self.estimate_tokens(msg.content)
+                if cumulative_tokens < (total_tokens - target_tokens):
+                    messages_to_summarize.append(msg)
+                    cumulative_tokens += msg_tokens
+
+            if len(messages_to_summarize) < 2:
+                logger.debug("Not enough messages to summarize meaningfully")
+                return None
+
+            logger.info(
+                f"📝 Summarizing {len(messages_to_summarize)} old messages "
+                f"({cumulative_tokens} tokens) for conversation: {conversation_id}"
+            )
+
+            # Format messages for summarization
+            formatted_messages = []
+            for msg in messages_to_summarize:
+                if msg.role == "user":
+                    formatted_messages.append(f"**User:** {msg.content}")
+                elif msg.role == "assistant":
+                    formatted_messages.append(f"**Assistant:** {msg.content}")
+
+            messages_text = "\n\n".join(formatted_messages)
+
+            # Create summarization prompt (technical, factual, bullet points)
+            summary_prompt = f"""Summarize the following conversation concisely as bullet points, preserving key information and context:
+
+---
+{messages_text}
+---
+
+Provide a summary in 3-5 bullet points covering:
+- Main topics discussed
+- Important facts or conclusions
+- Any decisions made
+- Relevant context for future messages
+
+Be factual and technical. Format as bullet points."""
+
+            # Call LLM for summary
+            from app.services import get_llm_service
+            llm_service = get_llm_service()
+
+            summary = await llm_service.generate(
+                prompt=summary_prompt,
+                model=settings.SUMMARIZATION_MODEL,
+                max_tokens=500,
+                temperature=0.3,  # Lower temperature for factual summary
+            )
+
+            # Estimate summary token count
+            summary_tokens = self.estimate_tokens(summary)
+
+            logger.info(
+                f"✅ Summarization complete: {len(messages_to_summarize)} messages "
+                f"({cumulative_tokens} tokens) → 1 summary ({summary_tokens} tokens). "
+                f"Saved: {cumulative_tokens - summary_tokens} tokens"
+            )
+
+            # Create summary message
+            import uuid
+            from datetime import datetime
+            summary_message = Message(
+                id=str(uuid.uuid4()),
+                conversation_id=conversation_id,
+                role="system",
+                content=f"[Previous Conversation Summary]\n{summary}",
+                model_used=settings.SUMMARIZATION_MODEL,
+                token_count=summary_tokens,
+                tool_executions=[],
+            )
+
+            # Delete old messages
+            message_ids_to_delete = [msg.id for msg in messages_to_summarize]
+            db.query(Message).filter(
+                Message.id.in_(message_ids_to_delete)
+            ).delete(synchronize_session=False)
+
+            # Add summary message
+            db.add(summary_message)
+            db.commit()
+
+            logger.info(
+                f"🔄 Replaced {len(messages_to_summarize)} messages with summary "
+                f"in conversation {conversation_id}"
+            )
+
+            # Invalidate Redis cache
+            if self.redis:
+                cache_key = get_conversation_cache_key(conversation_id)
+                await self.redis.delete(cache_key)
+                logger.debug(f"♻️  Invalidated context cache after summarization")
+
+            return summary
+
+        except Exception as e:
+            logger.error(
+                f"Error during summarization: {type(e).__name__}: {str(e)}",
+                exc_info=True
+            )
+            # Fall back gracefully - don't block message processing
+            return None
+
     async def truncate_context(
         self,
         conversation_id: str,

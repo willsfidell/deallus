@@ -10,6 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, status
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import get_db
 from app.auth import verify_api_key
 from app.models.schemas import ProcessRequest, ProcessResponse
@@ -26,14 +27,17 @@ async def verify_api_key_header(
     db: Session = Depends(get_db),
 ):
     """Dependency to verify API key from header."""
+    logger.info(f"[verify_api_key_header] Received X-API-Key header. Key starts with: {x_api_key[:20] if x_api_key else 'NONE'}...")
     user = verify_api_key(db=db, api_key=x_api_key)
 
     if not user:
+        logger.error(f"[verify_api_key_header] API key verification failed. Raising 401 HTTPException")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
         )
 
+    logger.info(f"[verify_api_key_header] API key verified successfully for user {user.username}")
     return user
 
 
@@ -78,6 +82,7 @@ async def process(
         conversation_service = ConversationService(redis_service)
 
         # Step 0: Handle conversation context
+        context_data = {}  # Initialize for all branches
         if conversation_id:
             # Validate that conversation belongs to user
             conversation = conversation_service.get_conversation(
@@ -105,15 +110,52 @@ async def process(
                 f"[{request_id}] Conversation context: "
                 f"{context_used} messages, {total_tokens} tokens, "
                 f"previous_model={previous_model}"
-            )
+             )
         else:
             previous_model = None
+            context_used = 0
+            total_tokens = 0
             # Create new conversation
             conversation = conversation_service.create_conversation(
                 user_id=user.id, db=db
             )
             conversation_id = conversation.id
             logger.info(f"[{request_id}] Created new conversation: {conversation_id}")
+
+        # Step 0.5: Check if summarization needed
+        if (settings.SUMMARIZATION_ENABLED and 
+            context_used > 0 and 
+            total_tokens > settings.CONTEXT_MAX_TOKENS * settings.SUMMARIZATION_THRESHOLD):
+            
+            logger.info(
+                f"[{request_id}] Token threshold exceeded "
+                f"({total_tokens} > {settings.CONTEXT_MAX_TOKENS * settings.SUMMARIZATION_THRESHOLD}). "
+                f"Triggering summarization..."
+            )
+            
+            try:
+                summary = await context_manager.summarize_old_messages(
+                    conversation_id, db
+                )
+                
+                if summary:
+                    logger.info(f"[{request_id}] Summarization complete. Reloading context...")
+                    # Reload context after summarization
+                    context_data = await context_manager.get_conversation_context(
+                        conversation_id, db
+                    )
+                    context_used = context_data.get("message_count", 0)
+                    total_tokens = context_data.get("total_tokens", 0)
+                    previous_model = context_data.get("last_model_used")
+                    
+                    logger.info(
+                        f"[{request_id}] Context after summarization: "
+                        f"{context_used} messages, {total_tokens} tokens"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"[{request_id}] Summarization failed: {e}. Continuing without summarization..."
+                )
 
         # Step 1: Run pre-prompt tools
         logger.info(f"[{request_id}] Processing prompt from user {user.email}")
@@ -190,6 +232,14 @@ async def process(
         # Step 3: Generate response using LLM
         logger.info(f"[{request_id}] Calling model: {model_to_use}")
 
+        # Extract conversation history if available
+        conversation_messages = None
+        if context_used > 0:
+            conversation_messages = context_data.get("messages", [])
+            logger.info(
+                f"[{request_id}] Passing {len(conversation_messages)} context messages to LLM"
+            )
+
         try:
             llm_service = get_llm_service()
             llm_response = await llm_service.generate(
@@ -197,6 +247,7 @@ async def process(
                 model=model_to_use,
                 max_tokens=500,
                 temperature=0.7,
+                conversation_messages=conversation_messages,
             )
             logger.info(
                 f"[{request_id}] Model response received ({len(llm_response)} chars)"
