@@ -71,11 +71,11 @@ Future<Message> _sendMessage(
 
     // Convert response to Message object
     final message = Message(
-      id: response.responseId,
-      conversationId: response.conversationId,
+      id: response.requestId,
+      conversationId: response.conversationId ?? '',
       role: 'assistant',
-      content: response.content,
-      timestamp: response.timestamp,
+      content: response.response,
+      timestamp: DateTime.now(), // Use current time since backend doesn't return timestamp
     );
 
     _logger.d('Message sent successfully: ${message.id}');

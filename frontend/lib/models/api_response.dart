@@ -5,34 +5,52 @@ part 'api_response.g.dart';
 /// Main response from /api/process endpoint
 @JsonSerializable()
 class ProcessResponse {
-  final String conversationId;
-  final String responseId;
+  @JsonKey(name: 'request_id')
+  final String requestId;
+  
+  @JsonKey(name: 'conversation_id')
+  final String? conversationId;
+  
+  @JsonKey(name: 'model_used')
   final String modelUsed;
-  final String content;
+  
+  final String response;
+  final String prompt;
+  
+  @JsonKey(name: 'execution_time_ms')
+  final double executionTimeMs;
+  
   @JsonKey(name: 'routing_reason')
-  final String routingReason;
+  final String? routingReason;
+  
   @JsonKey(name: 'continuity_applied')
   final bool continuityApplied;
+  
   @JsonKey(name: 'context_used')
-  final bool contextUsed;
+  final int contextUsed;
+  
   @JsonKey(name: 'total_tokens')
-  final int totalTokens;
-  @JsonKey(name: 'tools_executed')
+  final int? totalTokens;
+  
+  @JsonKey(name: 'tools_executed', defaultValue: [])
   final List<ToolExecution> toolsExecuted;
-  @JsonKey(name: 'timestamp')
-  final DateTime timestamp;
+  
+  @JsonKey(name: 'tool_flags', defaultValue: {})
+  final Map<String, dynamic> toolFlags;
 
   const ProcessResponse({
-    required this.conversationId,
-    required this.responseId,
+    required this.requestId,
+    this.conversationId,
     required this.modelUsed,
-    required this.content,
-    required this.routingReason,
+    required this.response,
+    required this.prompt,
+    required this.executionTimeMs,
+    this.routingReason,
     required this.continuityApplied,
     required this.contextUsed,
-    required this.totalTokens,
-    required this.toolsExecuted,
-    required this.timestamp,
+    this.totalTokens,
+    this.toolsExecuted = const [],
+    this.toolFlags = const {},
   });
 
   factory ProcessResponse.fromJson(Map<String, dynamic> json) =>

@@ -24,7 +24,7 @@ class MainScreen extends ConsumerWidget {
                   ),
                 ),
               ),
-              child: const SidebarWidget(),
+              child: SidebarWidget(),
             ),
           ),
 

@@ -30,6 +30,12 @@ class _MessageInputState extends ConsumerState<MessageInput> {
   void initState() {
     super.initState();
     _messageController = TextEditingController();
+    // Listen to text changes to trigger rebuild
+    _messageController.addListener(() {
+      setState(() {
+        // This will trigger a rebuild when text changes
+      });
+    });
   }
 
   @override
@@ -61,6 +67,9 @@ class _MessageInputState extends ConsumerState<MessageInput> {
 
       // Refresh the message list to show the new message
       ref.refresh(conversationMessagesProvider(widget.conversationId));
+      
+      // Invalidate the sendMessageProvider to allow new messages to be sent
+      ref.invalidate(sendMessageProvider);
 
       // Clear input
       _messageController.clear();

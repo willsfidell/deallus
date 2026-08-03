@@ -11,13 +11,14 @@ import 'settings_button.dart';
 
 /// Main sidebar widget containing chat list and action buttons
 class SidebarWidget extends ConsumerWidget {
-  const SidebarWidget({Key? key}) : super(key: key);
+  final Logger _logger = Logger();
+  
+  SidebarWidget({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final chatsState = ref.watch(chatListProvider);
     final activeChat = ref.watch(activeChatIdProvider);
-    final Logger logger = Logger();
 
     return Column(
       children: [
@@ -28,9 +29,17 @@ class SidebarWidget extends ConsumerWidget {
             onPressed: () async {
               try {
                 // Use the createChatProvider instead of notifier
-                await ref.read(createChatProvider(null).future);
+                final newChatId = await ref.read(createChatProvider(null).future);
+                
+                // Invalidate and refresh the chat list
+                ref.invalidate(chatListProvider);
+                
+                // Set the new chat as active
+                if (context.mounted && newChatId != null) {
+                  ref.read(activeChatIdProvider.notifier).setActiveChat(newChatId);
+                }
               } catch (e) {
-                logger.e('Failed to create new chat', error: e);
+                _logger.e('Failed to create new chat', error: e);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Error: $e')),
@@ -119,34 +128,36 @@ class SidebarWidget extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.of(dialogContext).pop(); // Use dialogContext instead of context
+              Navigator.of(dialogContext).pop();
             },
             child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () async {
               try {
-                // Use the deleteChatProvider instead of notifier
-                await ref.read(deleteChatProvider(chatId).future);
+                // Close dialog immediately
                 if (dialogContext.mounted) {
-                  Navigator.of(dialogContext).pop(); // Use dialogContext
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Conversation deleted')),
-                    );
-                  }
+                  Navigator.of(dialogContext).pop();
+                }
+                
+                // Then delete the conversation
+                await ref.read(deleteChatProvider(chatId).future);
+                
+                // Show success message
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Conversation deleted')),
+                  );
                 }
               } catch (e) {
-                if (dialogContext.mounted) {
-                  Navigator.of(dialogContext).pop(); // Use dialogContext
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Error deleting conversation: $e'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
+                _logger.e('Error deleting conversation: $e');
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error deleting conversation: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
                 }
               }
             },
