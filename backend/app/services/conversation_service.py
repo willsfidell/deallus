@@ -6,6 +6,7 @@ Handles CRUD operations, message storage, and business logic for conversations.
 
 import logging
 import uuid
+import asyncio
 from datetime import datetime
 from typing import Optional, List
 
@@ -14,6 +15,7 @@ from sqlalchemy import desc, and_
 
 from app.db.models import Conversation, Message
 from app.services.redis_service import RedisService, get_conversation_cache_key
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -453,3 +455,139 @@ class ConversationService:
                 pass
 
         return conversation
+
+    async def generate_conversation_title(
+        self,
+        message_content: str,
+        llm_service,
+    ) -> str:
+        """
+        Generate a concise conversation title from first message.
+
+        Args:
+            message_content: First user message content
+            llm_service: LLM service instance
+
+        Returns:
+            Generated title (max TITLE_MAX_LENGTH chars)
+        """
+        try:
+            # Truncate to first N words
+            words = message_content.strip().split()[:settings.TITLE_INPUT_WORDS]
+            truncated_content = " ".join(words)
+
+            if not truncated_content:
+                return "New Conversation"
+
+            # Build system prompt
+            system_prompt = (
+                f"Generate a brief, descriptive title (maximum {settings.TITLE_MAX_LENGTH} characters) "
+                f"for this conversation based on the user's message. The title should capture "
+                f"the main topic or intent. Respond with ONLY the title text, no quotes or extra punctuation."
+            )
+
+            # Try to generate title with regeneration logic for titles > 30 chars
+            attempts = 0
+            max_attempts = 2
+
+            while attempts < max_attempts:
+                generated_title = await llm_service.generate(
+                    prompt=f"User message: {truncated_content}",
+                    model=settings.TITLE_GENERATION_MODEL,
+                    max_tokens=20,
+                    temperature=0.3,
+                    system_prompt=system_prompt,
+                )
+
+                # Clean title (remove quotes, strip whitespace)
+                title = generated_title.strip().strip('"\'')
+
+                # Check if title is acceptable length
+                if len(title) <= settings.TITLE_MAX_LENGTH:
+                    # Title is good!
+                    if len(title) >= 3:
+                        logger.info(f"Generated title: '{title}' ({len(title)} chars)")
+                        return title
+                    else:
+                        # Too short, use fallback
+                        logger.warning(f"Generated title too short: '{title}'")
+                        break
+
+                # Title too long, try to regenerate if attempts left
+                attempts += 1
+                if attempts < max_attempts:
+                    logger.info(
+                        f"Title too long ({len(title)} chars), regenerating with stricter instructions..."
+                    )
+                    system_prompt = (
+                        f"Generate a VERY brief title (MAXIMUM {settings.TITLE_MAX_LENGTH} characters, "
+                        f"no more!). Be extremely concise. Respond with ONLY the title, no quotes."
+                    )
+
+            # If we got here, either regeneration failed or title was still too long
+            # Fallback: first TITLE_MAX_LENGTH chars of message
+            logger.warning(f"Title generation failed after {attempts} attempts. Using fallback.")
+            fallback = message_content.strip()[:settings.TITLE_MAX_LENGTH]
+            return fallback if fallback else "New Conversation"
+
+        except Exception as e:
+            # Fallback: First TITLE_MAX_LENGTH chars of message
+            logger.warning(f"Title generation exception: {e}. Using fallback.")
+            fallback = message_content.strip()[:settings.TITLE_MAX_LENGTH]
+            return fallback if fallback else "New Conversation"
+
+    def _update_conversation_title_internal(
+        self,
+        conversation_id: str,
+        title: str,
+        db: Session,
+    ) -> bool:
+        """
+        Update conversation title (internal use, no ownership check).
+
+        Used by async background tasks where ownership already verified.
+
+        Args:
+            conversation_id: Conversation ID
+            title: New title
+            db: Database session
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            conversation = db.query(Conversation).filter(
+                Conversation.id == conversation_id
+            ).first()
+
+            if not conversation:
+                logger.warning(
+                    f"Conversation {conversation_id} not found for title update"
+                )
+                return False
+
+            # Update title (respect DB constraint: max 255 chars)
+            conversation.title = title[:255]
+            conversation.updated_at = datetime.utcnow()
+
+            db.add(conversation)
+            db.commit()
+
+            logger.info(
+                f"✏️  Updated title for conversation {conversation_id}: '{title}'"
+            )
+
+            # Invalidate Redis cache
+            if self.redis:
+                cache_key = get_conversation_cache_key(conversation_id)
+                try:
+                    asyncio.create_task(self.redis.delete(cache_key))
+                except:
+                    pass
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to update conversation title: {e}")
+            db.rollback()
+            return False

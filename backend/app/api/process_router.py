@@ -9,6 +9,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header, status
 from sqlalchemy.orm import Session
+from sqlalchemy import create_engine
 
 from app.config import settings
 from app.db import get_db
@@ -17,9 +18,65 @@ from app.models.schemas import ProcessRequest, ProcessResponse
 from app.tools.registry import tool_registry
 from app.services import get_llm_service, LLMError, ContextManager, RedisService
 from app.services.conversation_service import ConversationService
+from app.db.models import Message
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+async def _generate_and_update_title_task(
+    conversation_id: str,
+    message_content: str,
+    db_url: str,
+):
+    """
+    Background task to generate and update conversation title.
+
+    Args:
+        conversation_id: Conversation ID
+        message_content: First user message content
+        db_url: Database URL for creating new session
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    try:
+        # Create new DB session (can't reuse request session in async task)
+        engine = create_engine(db_url)
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        db = SessionLocal()
+
+        try:
+            # Get services
+            llm_service = get_llm_service()
+            redis_service = await RedisService.get_instance()
+            conversation_service = ConversationService(redis_service)
+
+            # Generate title
+            title = await conversation_service.generate_conversation_title(
+                message_content, llm_service
+            )
+
+            # Update conversation
+            success = conversation_service._update_conversation_title_internal(
+                conversation_id, title, db
+            )
+
+            if success:
+                logger.info(
+                    f"[Background] Title generated for {conversation_id}: '{title}'"
+                )
+            else:
+                logger.warning(
+                    f"[Background] Failed to update title for {conversation_id}"
+                )
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(
+            f"[Background] Title generation task failed: {e}", exc_info=True
+        )
 
 
 async def verify_api_key_header(
@@ -305,6 +362,26 @@ async def process(
                 token_count=user_token_count,
                 tool_executions=tools_executed,
             )
+
+            # Check if this is the first user message -> trigger title generation
+            if settings.TITLE_GENERATION_ENABLED:
+                # Count existing messages (just added user message, so count = 1 means it's first)
+                message_count = db.query(Message).filter(
+                    Message.conversation_id == conversation_id
+                ).count()
+
+                if message_count == 1:
+                    # First message! Generate title in background
+                    logger.info(
+                        f"[{request_id}] First message detected, triggering title generation"
+                    )
+                    asyncio.create_task(
+                        _generate_and_update_title_task(
+                            conversation_id=conversation_id,
+                            message_content=request.prompt,
+                            db_url=settings.DATABASE_URL,
+                        )
+                    )
 
             # Store assistant message
             assistant_token_count = context_manager.estimate_tokens(final_response)

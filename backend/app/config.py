@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     SUMMARIZATION_MODEL: str = "ollama/llama2"  # Model to use for summarization
     SUMMARIZATION_MIN_MESSAGES: int = 3  # Minimum messages needed before summarization
 
+    # Title Generation
+    TITLE_GENERATION_ENABLED: bool = True  # Enable auto-generation of conversation titles
+    TITLE_GENERATION_MODEL: str = "ollama/llama3.2:3b"  # Fast, dedicated model for title generation
+    TITLE_MAX_LENGTH: int = 30  # Maximum characters in generated title
+    TITLE_INPUT_WORDS: int = 50  # Number of words from message to analyze
+
     # Contextual Routing
     CONTINUITY_BONUS: float = 0.15  # Confidence boost for previous model
     CONTINUITY_ENABLED: bool = True  # Enable contextual routing
