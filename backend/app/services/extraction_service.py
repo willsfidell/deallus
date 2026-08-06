@@ -8,6 +8,8 @@ from typing import Optional, List, Dict, Callable
 from pathlib import Path
 from io import BytesIO
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 # Type for extraction function
@@ -273,7 +275,12 @@ class ExtractionService:
                     import numpy as np
                     
                     # Initialize PaddleOCR
-                    ocr = PaddleOCR(use_angle_cls=True, lang='en')
+                    ocr = PaddleOCR(
+                        use_angle_cls=True, 
+                        lang='en',
+                        use_gpu=settings.PADDLEOCR_USE_GPU,  # Explicit CPU-only
+                        show_log=False  # Reduce noise in logs
+                    )
                     
                     # Convert PDF to images
                     doc = fitz.open(stream=file_bytes, filetype="pdf")
