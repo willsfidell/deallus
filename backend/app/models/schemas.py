@@ -1,7 +1,7 @@
 """Pydantic schemas for API requests and responses."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -132,6 +132,10 @@ class ProcessRequest(BaseModel):
     force_model: Optional[str] = Field(
         None,
         description="Force routing to specific model (overrides automatic routing)"
+    )
+    attachment_ids: Optional[List[str]] = Field(
+        None,
+        description="List of attachment IDs to include in prompt"
     )
 
 
