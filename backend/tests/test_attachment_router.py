@@ -496,5 +496,236 @@ class TestDeleteAttachmentEndpoint:
         assert exc_info.value.status_code == 404
 
 
+class TestAttachmentIntegration:
+    """Integration tests for attachment API endpoints."""
+    
+    @pytest.fixture
+    def test_db(self):
+        """Create test database."""
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+        from app.db.models import Base
+        
+        # Clear any existing metadata to avoid SQLite index conflicts
+        for table in Base.metadata.sorted_tables:
+            table.indexes.clear()
+        
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+            echo=False,
+        )
+        Base.metadata.create_all(bind=engine)
+        SessionLocal = sessionmaker(bind=engine)
+        db = SessionLocal()
+        yield db
+        db.close()
+    
+    @pytest.fixture
+    def test_user(self, test_db):
+        """Create test user."""
+        from app.db.models import User
+        
+        user = User(
+            email="test@example.com",
+            username="testuser",
+            hashed_password="hashed",
+            is_active=True
+        )
+        test_db.add(user)
+        test_db.commit()
+        test_db.refresh(user)
+        return user
+    
+    @pytest.fixture
+    def test_api_key(self, test_db, test_user):
+        """Create test API key."""
+        from app.db.models import APIKey
+        import hashlib
+        
+        raw_key = "test_key_12345678"
+        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+        
+        api_key = APIKey(
+            user_id=test_user.id,
+            key=key_hash,
+            name="test",
+            is_active=True
+        )
+        test_db.add(api_key)
+        test_db.commit()
+        test_db.refresh(api_key)
+        
+        # Return the raw key for use in tests
+        api_key.raw_key = raw_key
+        return api_key
+    
+    @pytest.fixture
+    def client(self, test_db):
+        """Create test client."""
+        from fastapi.testclient import TestClient
+        from app.main import create_app
+        from app.db import get_db
+        
+        app = create_app()
+        
+        def override_get_db():
+            yield test_db
+        
+        app.dependency_overrides[get_db] = override_get_db
+        client = TestClient(app)
+        yield client
+        app.dependency_overrides.clear()
+    
+    def test_upload_text_file(self, client, test_api_key):
+        """Test uploading a text file."""
+        import tempfile
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            f.write("Test content for upload")
+            temp_path = f.name
+        
+        try:
+            with open(temp_path, 'rb') as f:
+                response = client.post(
+                    "/api/attachments/upload",
+                    files={"file": ("test.txt", f, "text/plain")},
+                    headers={"X-API-Key": test_api_key.raw_key}
+                )
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["filename"] == "test.txt"
+            assert data["status"] == "completed"
+            assert data["word_count"] > 0
+            assert "extracted_text_preview" in data
+        finally:
+            import os
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+    
+    def test_upload_unsupported_file(self, client, test_api_key):
+        """Test uploading unsupported file type."""
+        import tempfile
+        
+        with tempfile.NamedTemporaryFile(mode='wb', suffix='.bin', delete=False) as f:
+            f.write(b"\x00\x01\x02\x03")
+            temp_path = f.name
+        
+        try:
+            with open(temp_path, 'rb') as f:
+                response = client.post(
+                    "/api/attachments/upload",
+                    files={"file": ("test.bin", f, "application/x-binary")},
+                    headers={"X-API-Key": test_api_key.raw_key}
+                )
+            
+            assert response.status_code == 400
+            assert "not supported" in response.json()["detail"]
+        finally:
+            import os
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+    
+    def test_upload_without_auth(self, client):
+        """Test uploading without API key."""
+        import tempfile
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            f.write("Test")
+            temp_path = f.name
+        
+        try:
+            with open(temp_path, 'rb') as f:
+                response = client.post(
+                    "/api/attachments/upload",
+                    files={"file": ("test.txt", f, "text/plain")}
+                )
+            
+            # FastAPI returns 422 when required header is missing
+            assert response.status_code == 422
+        finally:
+            import os
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+    
+    def test_get_attachment_status(self, client, test_api_key, test_db, test_user):
+        """Test getting attachment status."""
+        import tempfile
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            f.write("Test content")
+            temp_path = f.name
+        
+        try:
+            # Upload first
+            with open(temp_path, 'rb') as f:
+                upload_resp = client.post(
+                    "/api/attachments/upload",
+                    files={"file": ("test.txt", f, "text/plain")},
+                    headers={"X-API-Key": test_api_key.raw_key}
+                )
+            
+            att_id = upload_resp.json()["id"]
+            
+            # Get status
+            response = client.get(
+                f"/api/attachments/{att_id}",
+                headers={"X-API-Key": test_api_key.raw_key}
+            )
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["id"] == att_id
+            assert data["status"] == "completed"
+            assert data["filename"] == "test.txt"
+        finally:
+            import os
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+    
+    def test_delete_attachment(self, client, test_api_key, test_db):
+        """Test deleting attachment."""
+        import tempfile
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            f.write("Test")
+            temp_path = f.name
+        
+        try:
+            # Upload first
+            with open(temp_path, 'rb') as f:
+                upload_resp = client.post(
+                    "/api/attachments/upload",
+                    files={"file": ("test.txt", f, "text/plain")},
+                    headers={"X-API-Key": test_api_key.raw_key}
+                )
+            
+            att_id = upload_resp.json()["id"]
+            
+            # Delete
+            response = client.delete(
+                f"/api/attachments/{att_id}",
+                headers={"X-API-Key": test_api_key.raw_key}
+            )
+            
+            assert response.status_code == 200
+            assert response.json()["message"] == "Attachment deleted successfully"
+            
+            # Verify deleted
+            response = client.get(
+                f"/api/attachments/{att_id}",
+                headers={"X-API-Key": test_api_key.raw_key}
+            )
+            
+            assert response.status_code == 404
+        finally:
+            import os
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
