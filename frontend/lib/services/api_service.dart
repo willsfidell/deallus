@@ -234,6 +234,51 @@ class ApiService {
       throw ApiException.from(e);
     }
   }
+
+  /// Generic GET request
+  Future<Response<Map<String, dynamic>>> get(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+  }) async {
+    try {
+      return await _dio.get<Map<String, dynamic>>(
+        path,
+        queryParameters: queryParameters,
+      );
+    } on DioException catch (e) {
+      throw ApiException.from(e);
+    }
+  }
+
+  /// Generic POST request
+  Future<Response<Map<String, dynamic>>> post(
+    String path, {
+    dynamic data,
+  }) async {
+    try {
+      return await _dio.post<Map<String, dynamic>>(
+        path,
+        data: data,
+      );
+    } on DioException catch (e) {
+      throw ApiException.from(e);
+    }
+  }
+
+  /// Generic DELETE request
+  Future<Response<Map<String, dynamic>>> delete(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+  }) async {
+    try {
+      return await _dio.delete<Map<String, dynamic>>(
+        path,
+        queryParameters: queryParameters,
+      );
+    } on DioException catch (e) {
+      throw ApiException.from(e);
+    }
+  }
 }
 
 /// Logging interceptor for Dio
