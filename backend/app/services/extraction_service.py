@@ -121,8 +121,26 @@ class ExtractionService:
                             processing_time_ms=(time.time() - start_time) * 1000
                         )
                 
+                # Try vision model OCR if enabled and basic extraction failed
+                if settings.VISION_OCR_ENABLED:
+                    logger.info("Attempting vision model OCR via Ollama")
+                    vision_result = await self._try_vision_ocr(file_bytes_local)
+                    
+                    if vision_result['success']:
+                        elapsed_time = (time.time() - start_time) * 1000
+                        return ExtractionResult(
+                            extracted_text=vision_result['text'],
+                            page_count=vision_result.get('page_count'),
+                            extraction_method=vision_result['method'],
+                            ocr_applied=True,
+                            warnings=vision_result.get('warnings', []),
+                            processing_time_ms=elapsed_time
+                        )
+                    else:
+                        logger.warning(f"Vision OCR failed, will try fallback methods")
+                
                 # Fall back to Marker extraction if configured (high-quality extraction, requires GPU)
-                # This is intentionally last before OCR as it requires more complex setup
+                # This is intentionally last before PaddleOCR as it requires more complex setup
                 logger.info("Basic extraction got minimal text, attempting Marker extraction")
                 marker_result = await self._try_marker_extraction(file_bytes_local)
                 
