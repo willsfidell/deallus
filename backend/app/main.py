@@ -107,11 +107,12 @@ def create_app() -> FastAPI:
     )
 
     # Import and register routers
-    from app.api import health_router, auth_router, process_router, conversation_router
+    from app.api import health_router, auth_router, process_router, conversation_router, attachment_router
 
     app.include_router(health_router.router, prefix="/api/health", tags=["health"])
     app.include_router(auth_router.router, prefix="/api/auth", tags=["auth"])
     app.include_router(process_router.router, prefix="/api/process", tags=["process"])
     app.include_router(conversation_router.router, prefix="/api", tags=["conversations"])
+    app.include_router(attachment_router.router)
 
     return app

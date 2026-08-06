@@ -1,7 +1,7 @@
 """Database module."""
 
 from app.db.database import SessionLocal, get_db, init_db, drop_db, engine
-from app.db.models import Base, User, APIKey
+from app.db.models import Base, User, APIKey, Attachment
 
 __all__ = [
     "SessionLocal",
@@ -12,4 +12,5 @@ __all__ = [
     "Base",
     "User",
     "APIKey",
+    "Attachment",
 ]

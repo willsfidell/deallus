@@ -8,7 +8,7 @@ Uses SQLAlchemy 2.0 with Pydantic integration.
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, Boolean, Index, JSON
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, Boolean, Index, JSON, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
@@ -119,3 +119,39 @@ class Message(Base):
 
     def __repr__(self) -> str:
         return f"<Message(id={self.id}, conversation_id={self.conversation_id}, role={self.role})>"
+
+
+class Attachment(Base):
+    """Temporary attachment storage for uploaded files."""
+    
+    __tablename__ = "attachments"
+    
+    id = Column(String(36), primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    filename = Column(String(255), nullable=False)
+    mime_type = Column(String(100), nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    
+    extracted_text = Column(Text, nullable=True)
+    extraction_status = Column(String(20), nullable=False)
+    extraction_error = Column(Text, nullable=True)
+    page_count = Column(Integer, nullable=True)
+    word_count = Column(Integer, nullable=True)
+    
+    extraction_method = Column(String(50), nullable=True)
+    processing_time_ms = Column(Float, nullable=True)
+    ocr_applied = Column(Boolean, default=False)
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=True)
+    
+    user = relationship("User", backref="attachments")
+    
+    __table_args__ = (
+        Index("ix_attachments_user_id", "user_id"),
+        Index("ix_attachments_status", "extraction_status"),
+        Index("ix_attachments_expires", "expires_at"),
+    )
+    
+    def __repr__(self) -> str:
+        return f"<Attachment(id={self.id}, filename={self.filename}, status={self.extraction_status})>"
