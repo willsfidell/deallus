@@ -214,13 +214,14 @@ async def get_attachment(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Attachment not found"
             )
-        
+         
         # Check Redis cache first
         redis = await RedisService.get_instance()
         if redis:
             cached = await redis.get(f"attachment:{attachment_id}")
             if cached:
                 logger.debug(f"Attachment {attachment_id} from cache")
+                return cached
         
         response = AttachmentResponse(attachment, preview_length=200)
         response_dict = response.dict()
@@ -274,8 +275,8 @@ async def delete_attachment(
         if redis:
             try:
                 await redis.delete(f"attachment:{attachment_id}")
-            except:
-                pass
+            except Exception as e:
+                logger.exception(f"Failed to clear Redis cache for attachment {attachment_id}")
         
         logger.info(f"Deleted attachment: {attachment_id}")
         
