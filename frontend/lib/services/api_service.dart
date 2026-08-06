@@ -83,6 +83,7 @@ class ApiService {
     String? conversationId,
     String? model,
     bool forceModel = false,
+    List<String>? attachmentIds,
   }) async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
@@ -92,6 +93,8 @@ class ApiService {
           if (model != null) 'model': model,
           if (conversationId != null) 'conversation_id': conversationId,
           if (forceModel) 'force_model': forceModel,
+          if (attachmentIds != null && attachmentIds.isNotEmpty)
+            'attachment_ids': attachmentIds,
         },
       );
       return ProcessResponse.fromJson(response.data!);

@@ -1,11 +1,13 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
 
-import '../../config/app_constants.dart';
-import '../../providers/message_provider.dart';
+import '../../providers/attachment_provider.dart';
 import '../../providers/conversation_provider.dart';
-import '../common/loading_indicator.dart';
+import '../../providers/message_provider.dart';
+import 'attachment_chip.dart';
+import 'file_picker_button.dart';
 
 /// Message input widget
 class MessageInput extends ConsumerStatefulWidget {
@@ -13,8 +15,8 @@ class MessageInput extends ConsumerStatefulWidget {
 
   const MessageInput({
     required this.conversationId,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   @override
   ConsumerState<MessageInput> createState() => _MessageInputState();
@@ -24,7 +26,6 @@ class _MessageInputState extends ConsumerState<MessageInput> {
   late TextEditingController _messageController;
   bool _isSending = false;
   final Logger _logger = Logger();
-  List<String> _attachedFiles = [];
 
   @override
   void initState() {
@@ -44,9 +45,9 @@ class _MessageInputState extends ConsumerState<MessageInput> {
     super.dispose();
   }
 
-  /// Send message
-  Future<void> _sendMessage() async {
-    if (_messageController.text.isEmpty && _attachedFiles.isEmpty) {
+  /// Send message with attachment IDs
+  Future<void> _sendMessage(WidgetRef ref) async {
+    if (_messageController.text.isEmpty) {
       return;
     }
 
@@ -55,25 +56,31 @@ class _MessageInputState extends ConsumerState<MessageInput> {
         _isSending = true;
       });
 
+      final attachmentState = ref.read(attachmentProvider);
+      final attachmentIds =
+          attachmentState.attachments.map((a) => a.id).toList();
+
       final params = SendMessageParams(
         conversationId: widget.conversationId,
         message: _messageController.text,
-        filePaths: _attachedFiles.isNotEmpty ? _attachedFiles : null,
+        filePaths: attachmentIds.isNotEmpty ? attachmentIds : null,
       );
 
-      final response = await ref.read(
+      await ref.read(
         sendMessageProvider(params).future,
       );
 
       // Refresh the message list to show the new message
+      // ignore: unused_result
       ref.refresh(conversationMessagesProvider(widget.conversationId));
-      
+
       // Invalidate the sendMessageProvider to allow new messages to be sent
-      ref.invalidate(sendMessageProvider);
+      ref
+        ..invalidate(sendMessageProvider)
+        ..read(attachmentProvider.notifier).clearAttachments();
 
       // Clear input
       _messageController.clear();
-      _attachedFiles.clear();
 
       _logger.d('Message sent successfully');
 
@@ -106,25 +113,35 @@ class _MessageInputState extends ConsumerState<MessageInput> {
 
   @override
   Widget build(BuildContext context) {
+    final attachmentState = ref.watch(attachmentProvider);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // File attachments preview
-        if (_attachedFiles.isNotEmpty)
+        // Show attachment chips if any
+        if (attachmentState.attachments.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(8),
             child: Wrap(
               spacing: 8,
-              children: _attachedFiles
-                  .map((file) => Chip(
-                        label: Text(file.split('/').last),
-                        onDeleted: () {
-                          setState(() {
-                            _attachedFiles.remove(file);
-                          });
-                        },
-                      ))
-                  .toList(),
+              runSpacing: 4,
+              children: attachmentState.attachments.map((att) =>
+                  AttachmentChip(
+                    attachment: att,
+                    onDelete: (id) => ref
+                        .read(attachmentProvider.notifier)
+                        .removeAttachment(id),
+                  )).toList(),
+            ),
+          ),
+
+        // Show error if any
+        if (attachmentState.error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              attachmentState.error!,
+              style: const TextStyle(color: Colors.red, fontSize: 12),
             ),
           ),
 
@@ -143,7 +160,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                   controller: _messageController,
                   maxLines: 4,
                   minLines: 1,
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     hintText: 'Type a message...',
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.zero,
@@ -155,7 +172,8 @@ class _MessageInputState extends ConsumerState<MessageInput> {
 
               // Action buttons
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -163,16 +181,15 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         // File attachment button
-                        Tooltip(
-                          message: 'Attach files (max 4)',
-                          child: IconButton(
-                            icon: const Icon(Icons.attach_file),
-                            onPressed: _isSending
-                                ? null
-                                : () {
-                                    _logger.d('File picker not implemented yet');
-                                  },
-                          ),
+                        FilePickerButton(
+                          onFilesSelected: (filePaths) {
+                            for (final path in filePaths) {
+                              final file = File(path);
+                              ref
+                                  .read(attachmentProvider.notifier)
+                                  .uploadFile(file);
+                            }
+                          },
                         ),
 
                         // Audio record button
@@ -182,9 +199,8 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                             icon: const Icon(Icons.mic),
                             onPressed: _isSending
                                 ? null
-                                : () {
-                                    _logger.d('Audio recording not implemented yet');
-                                  },
+                                : () => _logger.d(
+                                    'Audio recording not implemented yet'),
                           ),
                         ),
                       ],
@@ -194,11 +210,10 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                     Tooltip(
                       message: 'Send message',
                       child: FloatingActionButton(
-                        onPressed: (_messageController.text.isEmpty &&
-                                _attachedFiles.isEmpty) ||
-                            _isSending
-                            ? null
-                            : _sendMessage,
+                        onPressed:
+                            (_messageController.text.isEmpty) || _isSending
+                                ? null
+                                : () => _sendMessage(ref),
                         mini: true,
                         child: _isSending
                             ? const SizedBox(

@@ -33,6 +33,30 @@ class ChatService {
     }
   }
 
+  /// Send message with attachment IDs
+  Future<ProcessResponse> sendMessageWithAttachments({
+    required String message,
+    required List<String> attachmentIds,
+    String? conversationId,
+  }) async {
+    try {
+      if (message.trim().isEmpty && attachmentIds.isEmpty) {
+        throw ValidationException(
+          message: 'Message and attachments cannot both be empty',
+        );
+      }
+
+      return await _apiService.processMessage(
+        message: message,
+        conversationId: conversationId,
+        attachmentIds: attachmentIds,
+      );
+    } catch (e) {
+      _logger.e('Failed to send message with attachments', error: e);
+      rethrow;
+    }
+  }
+
   /// Send message with file attachments
   Future<ProcessResponse> sendMessageWithFiles({
     required String message,

@@ -57,11 +57,21 @@ Future<Message> _sendMessage(
         conversationId: params.conversationId,
       );
     } else if (params.filePaths != null && params.filePaths!.isNotEmpty) {
-      response = await chatService.sendMessageWithFiles(
-        message: params.message,
-        filePaths: params.filePaths!,
-        conversationId: params.conversationId,
-      );
+      // If filePaths contain attachment IDs (they are UUIDs), use sendMessageWithAttachments
+      // Otherwise, use sendMessageWithFiles for file paths
+      if (_isAttachmentIds(params.filePaths!)) {
+        response = await chatService.sendMessageWithAttachments(
+          message: params.message,
+          attachmentIds: params.filePaths!,
+          conversationId: params.conversationId,
+        );
+      } else {
+        response = await chatService.sendMessageWithFiles(
+          message: params.message,
+          filePaths: params.filePaths!,
+          conversationId: params.conversationId,
+        );
+      }
     } else {
       response = await chatService.sendMessage(
         message: params.message,
@@ -87,6 +97,13 @@ Future<Message> _sendMessage(
       originalException: e,
     );
   }
+}
+
+/// Helper to detect if strings are attachment IDs (UUIDs) vs file paths
+bool _isAttachmentIds(List<String> items) {
+  if (items.isEmpty) return false;
+  // Check if first item looks like a UUID (no slashes or backslashes)
+  return !items.first.contains('/') && !items.first.contains('\\');
 }
 
 /// Provider for deleting a message
