@@ -20,7 +20,7 @@ class FilePickerButton extends StatelessWidget {
 
   Future<void> _pickFiles() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['pdf', 'txt', 'docx'],
         allowMultiple: true,
