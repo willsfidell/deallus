@@ -262,6 +262,47 @@ class ExtractionService:
             logger.debug(f"Basic extraction failed: {e}")
             return {'success': False}
     
+    async def _pdf_to_images(self, file_bytes: bytes, dpi: int = 150) -> List[bytes]:
+        """Convert PDF pages to PNG images for vision model processing.
+        
+        Args:
+            file_bytes: PDF file as bytes
+            dpi: Resolution for rendering (150 = good quality/size balance)
+            
+        Returns:
+            List of PNG image bytes (one per page)
+        """
+        try:
+            import fitz  # PyMuPDF (already in requirements)
+            
+            loop = asyncio.get_event_loop()
+            
+            def _convert():
+                images = []
+                doc = fitz.open(stream=file_bytes, filetype="pdf")
+                
+                for page_num in range(len(doc)):
+                    page = doc[page_num]
+                    # Render page to pixmap at specified DPI
+                    mat = fitz.Matrix(dpi / 72, dpi / 72)  # 72 DPI = default
+                    pix = page.get_pixmap(matrix=mat)
+                    
+                    # Convert to PNG bytes
+                    img_bytes = pix.tobytes("png")
+                    images.append(img_bytes)
+                    
+                doc.close()
+                logger.info(f"Converted {len(images)} pages to images at {dpi} DPI")
+                return images
+            
+            # Run in thread pool to avoid blocking
+            images = await loop.run_in_executor(None, _convert)
+            return images
+            
+        except Exception as e:
+            logger.error(f"Failed to convert PDF to images: {e}", exc_info=True)
+            return []
+    
     async def _try_paddle_ocr_fallback(self, file_bytes: bytes) -> Dict:
         """Extract text from PDF using PaddleOCR as fallback for scanned PDFs."""
         try:
