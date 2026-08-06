@@ -626,3 +626,60 @@ class TestTextExtraction:
         assert result.error is not None
         assert "not found" in result.error.lower() or "cannot" in result.error.lower()
 
+
+class TestVisionOCR:
+    """Tests for vision model OCR extraction via LiteLLM/Ollama."""
+    
+    @pytest.mark.asyncio
+    async def test_vision_ocr_disabled_by_default(self):
+        """Vision OCR should be disabled by default."""
+        from app.config import settings
+        assert settings.VISION_OCR_ENABLED is False
+    
+    @pytest.mark.asyncio
+    async def test_vision_ocr_skipped_when_disabled(self):
+        """Vision OCR should be skipped when disabled."""
+        service = ExtractionService()
+        result = await service._try_vision_ocr(b"%PDF-1.4\ntest")
+        assert result['success'] is False
+        assert result['method'] == 'vision-disabled'
+    
+    @pytest.mark.asyncio
+    async def test_pdf_to_images_empty_input(self):
+        """PDF to images should handle empty input gracefully."""
+        service = ExtractionService()
+        images = await service._pdf_to_images(b"")
+        assert images == []
+    
+    @pytest.mark.asyncio
+    async def test_vision_ocr_returns_dict_structure(self):
+        """Vision OCR should return correct dict structure."""
+        service = ExtractionService()
+        result = await service._try_vision_ocr(b"%PDF-1.4")
+        
+        # Check all expected keys present
+        assert 'success' in result
+        assert 'text' in result
+        assert 'method' in result
+        assert result['method'] == 'vision-ocr' or result['method'] == 'vision-disabled'
+    
+    @pytest.mark.asyncio
+    async def test_paddleocr_config_used(self):
+        """PaddleOCR should use settings.PADDLEOCR_USE_GPU value."""
+        from app.config import settings
+        assert settings.PADDLEOCR_USE_GPU is False  # Explicit CPU mode
+    
+    @pytest.mark.asyncio
+    async def test_vision_ocr_timeout_setting(self):
+        """Vision OCR timeout should be configured."""
+        from app.config import settings
+        assert settings.VISION_OCR_TIMEOUT_SECONDS == 45
+        assert settings.VISION_OCR_TIMEOUT_SECONDS > 0
+    
+    @pytest.mark.asyncio
+    async def test_vision_ocr_base_url_optional(self):
+        """Vision OCR base URL should be optional."""
+        from app.config import settings
+        # Should be None or a string, but not required
+        assert settings.VISION_OCR_BASE_URL is None or isinstance(settings.VISION_OCR_BASE_URL, str)
+
