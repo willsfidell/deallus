@@ -77,6 +77,14 @@ services:
       DEBUG: ${DEBUG:-true}
       API_HOST: 0.0.0.0
       API_PORT: 8000
+      # Vision OCR Configuration (disabled by default, enable to test)
+      VISION_OCR_ENABLED: "false"
+      VISION_OCR_MODEL: "ollama/qwen2-vl:7b"
+      VISION_OCR_BASE_URL: "http://ollama:11434"
+      VISION_OCR_TIMEOUT_SECONDS: "45"
+      VISION_OCR_MAX_RETRIES: "1"
+      OCR_FALLBACK_ENABLED: "true"
+      PADDLEOCR_USE_GPU: "false"
     ports:
       - "8000:8000"
     depends_on:
