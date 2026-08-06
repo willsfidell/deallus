@@ -78,83 +78,118 @@ class ExtractionService:
                 processing_time_ms=(time.time() - start_time) * 1000
             )
     
-    async def extract_pdf(self, file_path: str = None, file_bytes: bytes = None) -> ExtractionResult:
-        """Extract text from PDF using Marker, fallback to PaddleOCR."""
+    async def extract_pdf(self, file_path: str = None, file_bytes: bytes = None, timeout_seconds: int = 30) -> ExtractionResult:
+        """Extract text from PDF using basic libraries, Marker, and PaddleOCR fallbacks.
+        
+        Args:
+            file_path: Path to PDF file to read
+            file_bytes: PDF content as bytes
+            timeout_seconds: Timeout for extraction in seconds (default 30)
+        
+        Returns:
+            ExtractionResult with extracted text and metadata
+        """
         start_time = time.time()
         
-        try:
-            # Read file if path provided
-            if file_path and not file_bytes:
-                with open(file_path, 'rb') as f:
-                    file_bytes = f.read()
-            
-            if not file_bytes:
-                return ExtractionResult(
-                    extracted_text="",
-                    error="No PDF content provided"
-                )
-            
-            # Try Marker first
-            marker_result = await self._try_marker_extraction(file_bytes)
-            
-            if marker_result and marker_result.get('success'):
-                # Marker successfully extracted text
-                return ExtractionResult(
-                    extracted_text=marker_result.get('text', ''),
-                    page_count=marker_result.get('page_count'),
-                    extraction_method="marker",
-                    ocr_applied=False,
-                    processing_time_ms=(time.time() - start_time) * 1000
-                )
-            
-            # Try basic PDF text extraction (no OCR yet)
-            basic_result = await self._try_basic_pdf_extraction(file_bytes)
-            if basic_result and basic_result.get('success'):
-                text = basic_result.get('text', '')
-                if len(text.strip()) > 50:  # If we got meaningful text
+        async def _do_extract():
+            try:
+                # Read file if path provided
+                if file_path and not file_bytes:
+                    with open(file_path, 'rb') as f:
+                        file_bytes_local = f.read()
+                else:
+                    file_bytes_local = file_bytes
+                
+                if not file_bytes_local:
                     return ExtractionResult(
-                        extracted_text=text,
-                        page_count=basic_result.get('page_count'),
-                        extraction_method="basic_pdf",
+                        extracted_text="",
+                        error="No PDF content provided"
+                    )
+                
+                # Try basic PDF text extraction first (most reliable for modern PDFs)
+                basic_result = await self._try_basic_pdf_extraction(file_bytes_local)
+                if basic_result and basic_result.get('success'):
+                    text = basic_result.get('text', '')
+                    if len(text.strip()) > 50:  # If we got meaningful text
+                        return ExtractionResult(
+                            extracted_text=text,
+                            page_count=basic_result.get('page_count'),
+                            extraction_method="basic_pdf",
+                            ocr_applied=False,
+                            processing_time_ms=(time.time() - start_time) * 1000
+                        )
+                
+                # Fall back to Marker extraction if configured (high-quality extraction, requires GPU)
+                # This is intentionally last before OCR as it requires more complex setup
+                logger.info("Basic extraction got minimal text, attempting Marker extraction")
+                marker_result = await self._try_marker_extraction(file_bytes_local)
+                
+                if marker_result and marker_result.get('success'):
+                    return ExtractionResult(
+                        extracted_text=marker_result.get('text', ''),
+                        page_count=marker_result.get('page_count'),
+                        extraction_method="marker",
                         ocr_applied=False,
+                        warnings=["Used Marker extraction for complex PDF"],
                         processing_time_ms=(time.time() - start_time) * 1000
                     )
-            
-            # Fall back to PaddleOCR for scanned PDFs
-            logger.info("Basic extraction got minimal text, attempting PaddleOCR fallback")
-            ocr_result = await self._try_paddle_ocr_fallback(file_bytes)
-            
-            if ocr_result and ocr_result.get('success'):
+                
+                # Fall back to PaddleOCR for scanned PDFs
+                logger.info("Marker extraction unavailable, attempting PaddleOCR fallback")
+                ocr_result = await self._try_paddle_ocr_fallback(file_bytes_local)
+                
+                if ocr_result and ocr_result.get('success'):
+                    return ExtractionResult(
+                        extracted_text=ocr_result.get('text', ''),
+                        page_count=ocr_result.get('page_count'),
+                        extraction_method="paddle_ocr",
+                        ocr_applied=True,
+                        warnings=["Used OCR fallback for scanned PDF"],
+                        processing_time_ms=(time.time() - start_time) * 1000
+                    )
+                
                 return ExtractionResult(
-                    extracted_text=ocr_result.get('text', ''),
-                    page_count=ocr_result.get('page_count'),
-                    extraction_method="paddle_ocr",
-                    ocr_applied=True,
-                    warnings=["Used OCR fallback for scanned PDF"],
+                    extracted_text="",
+                    error="Could not extract text from PDF with any available method",
                     processing_time_ms=(time.time() - start_time) * 1000
                 )
+                
+            except Exception as e:
+                logger.error(f"PDF extraction failed: {e}", exc_info=True)
+                return ExtractionResult(
+                    extracted_text="",
+                    error=str(e),
+                    processing_time_ms=(time.time() - start_time) * 1000
+                )
+        
+        try:
+            # Apply timeout to the extraction
+            result = await asyncio.wait_for(_do_extract(), timeout=timeout_seconds)
+            return result
             
+        except asyncio.TimeoutError:
+            logger.warning(f"PDF extraction timed out after {timeout_seconds} seconds")
             return ExtractionResult(
                 extracted_text="",
-                error="Could not extract text from PDF with any available method",
-                processing_time_ms=(time.time() - start_time) * 1000
-            )
-            
-        except Exception as e:
-            logger.error(f"PDF extraction failed: {e}", exc_info=True)
-            return ExtractionResult(
-                extracted_text="",
-                error=str(e),
+                error=f"PDF extraction timed out after {timeout_seconds} seconds",
                 processing_time_ms=(time.time() - start_time) * 1000
             )
     
     async def _try_marker_extraction(self, file_bytes: bytes) -> Optional[Dict]:
-        """Try to extract text from PDF using Marker library."""
+        """Try to extract text from PDF using Marker library.
+        
+        Note: Marker extraction is a future enhancement. The marker-pdf library
+        is complex and requires GPU/ML setup with significant dependencies.
+        This method is intentionally placed last in the fallback chain before OCR,
+        allowing for implementation when Marker is properly installed and configured.
+        
+        Returns:
+            Dict with 'success' (bool) key, or None on error
+        """
         try:
-            # marker-pdf library is complex and requires GPU/ML setup
-            # For now, we'll skip it in favor of simpler extraction methods
-            # This can be implemented when marker is properly installed
-            logger.debug("Marker extraction not yet implemented")
+            # Marker implementation can be added here when dependencies are available
+            # For now, signal that it's not yet implemented
+            logger.debug("Marker extraction not yet implemented - skipping to OCR fallback")
             return {'success': False}
         except Exception as e:
             logger.debug(f"Marker extraction error: {e}")
@@ -234,6 +269,8 @@ class ExtractionService:
                 try:
                     from paddleocr import PaddleOCR
                     import fitz
+                    import cv2
+                    import numpy as np
                     
                     # Initialize PaddleOCR
                     ocr = PaddleOCR(use_angle_cls=True, lang='en')
@@ -245,17 +282,27 @@ class ExtractionService:
                     for page_num, page in enumerate(doc):
                         # Render page to image
                         pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
-                        img_bytes = pix.tobytes('png')
+                        # Convert PNG bytes to numpy array (PaddleOCR expects numpy array, not raw bytes)
+                        png_bytes = pix.tobytes('png')
+                        img_array = cv2.imdecode(
+                            np.frombuffer(png_bytes, np.uint8), 
+                            cv2.IMREAD_COLOR
+                        )
                         
-                        # Run OCR
-                        results = ocr.ocr(img_bytes, cls=True)
+                        # Run OCR with numpy array
+                        results = ocr.ocr(img_array, cls=True)
                         
-                        # Extract text from results
-                        if results:
+                        # Extract text from results with proper error handling
+                        if results and isinstance(results, list):
                             for line in results:
-                                if line:
+                                if line and isinstance(line, list):
                                     for word_info in line:
-                                        all_text += word_info[1][0] + " "
+                                        # Validate word_info structure before accessing nested indices
+                                        if (isinstance(word_info, (list, tuple)) and 
+                                            len(word_info) > 1 and 
+                                            isinstance(word_info[1], (list, tuple)) and 
+                                            len(word_info[1]) > 0):
+                                            all_text += str(word_info[1][0]) + " "
                                     all_text += "\n"
                     
                     return {
@@ -267,7 +314,7 @@ class ExtractionService:
                     logger.debug(f"PaddleOCR or dependencies not available: {e}")
                     return {'success': False}
                 except Exception as e:
-                    logger.error(f"PaddleOCR extraction failed: {e}")
+                    logger.error(f"PaddleOCR extraction failed: {e}", exc_info=True)
                     return {'success': False}
             
             result = await loop.run_in_executor(None, _paddle_extract)

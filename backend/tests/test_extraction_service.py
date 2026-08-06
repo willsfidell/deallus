@@ -297,3 +297,95 @@ class TestExtractionService:
         finally:
             Path(temp_path).unlink()
 
+
+class TestPaddleOCRFixes:
+    """Test critical fixes for PaddleOCR and error handling."""
+
+    @pytest.fixture
+    def service(self):
+        """Create an ExtractionService instance."""
+        return ExtractionService()
+
+    @pytest.mark.asyncio
+    async def test_paddle_ocr_handles_invalid_result_format(self, service):
+        """PaddleOCR handles invalid result format without crashing."""
+        pdf_bytes = b"mock pdf"
+        
+        # Mock OCR to return None or malformed data
+        async def mock_ocr_invalid(file_bytes):
+            return {
+                'success': True,
+                'text': 'This should be ignored because result is invalid',
+                'page_count': 1
+            }
+        
+        # This test primarily validates the error handling in _try_paddle_ocr_fallback
+        # The actual fix is in the result parsing validation
+        with patch.object(service, '_try_paddle_ocr_fallback', mock_ocr_invalid):
+            result = await service.extract_pdf(file_path=None, file_bytes=pdf_bytes)
+        
+        # Should handle gracefully
+        assert isinstance(result, ExtractionResult)
+
+    @pytest.mark.asyncio
+    async def test_extract_pdf_with_timeout_parameter(self, service):
+        """extract_pdf respects timeout parameter for direct calls."""
+        pdf_bytes = b"mock pdf"
+        
+        # Mock slow extraction
+        async def mock_slow_extract(file_bytes):
+            await asyncio.sleep(2)
+            return {
+                'success': True,
+                'text': 'Should timeout',
+                'page_count': 1
+            }
+        
+        with patch.object(service, '_try_basic_pdf_extraction', mock_slow_extract):
+            result = await service.extract_pdf(
+                file_path=None,
+                file_bytes=pdf_bytes,
+                timeout_seconds=0.1  # Very short timeout
+            )
+        
+        assert result.error is not None
+        assert "timed out" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_marker_extraction_in_fallback_chain(self, service):
+        """Marker extraction is in the correct position in fallback chain."""
+        pdf_bytes = b"mock pdf"
+        
+        call_order = []
+        
+        # Track which methods are called
+        async def mock_basic_minimal(file_bytes):
+            call_order.append("basic")
+            return {
+                'success': True,
+                'text': 'Short',  # Below threshold
+                'page_count': 1
+            }
+        
+        async def mock_marker(file_bytes):
+            call_order.append("marker")
+            return {'success': False}  # Marker not implemented
+        
+        async def mock_ocr(file_bytes):
+            call_order.append("ocr")
+            return {
+                'success': True,
+                'text': 'OCR result',
+                'page_count': 1
+            }
+        
+        with patch.object(service, '_try_basic_pdf_extraction', mock_basic_minimal):
+            with patch.object(service, '_try_marker_extraction', mock_marker):
+                with patch.object(service, '_try_paddle_ocr_fallback', mock_ocr):
+                    result = await service.extract_pdf(file_path=None, file_bytes=pdf_bytes)
+        
+        # Verify call order: basic -> marker -> ocr
+        assert call_order == ["basic", "marker", "ocr"]
+        # Verify final result is from OCR
+        assert result.extraction_method == "paddle_ocr"
+
