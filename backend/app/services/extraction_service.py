@@ -303,6 +303,113 @@ class ExtractionService:
             logger.error(f"Failed to convert PDF to images: {e}", exc_info=True)
             return []
     
+    async def _try_vision_ocr(self, file_bytes: bytes) -> Dict:
+        """Extract text using LiteLLM vision model via Ollama.
+        
+        Args:
+            file_bytes: PDF file as bytes
+            
+        Returns:
+            Dict with 'success', 'text', 'method', 'page_count', 'warnings'
+        """
+        from app.config import settings
+        
+        if not settings.VISION_OCR_ENABLED:
+            return {'success': False, 'text': '', 'method': 'vision-disabled'}
+        
+        try:
+            from litellm import completion
+            import base64
+            
+            # Convert PDF to images
+            images = await self._pdf_to_images(file_bytes)
+            if not images:
+                return {
+                    'success': False, 
+                    'text': '', 
+                    'method': 'vision-ocr',
+                    'warnings': ['Failed to convert PDF to images']
+                }
+            
+            # Process each page with vision model
+            extracted_pages = []
+            warnings = []
+            
+            for idx, img_bytes in enumerate(images):
+                try:
+                    # Encode image as base64
+                    img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+                    
+                    # Prepare kwargs for LiteLLM
+                    completion_kwargs = {
+                        'model': settings.VISION_OCR_MODEL,
+                        'messages': [{
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": settings.VISION_OCR_PROMPT},
+                                {"type": "image_url", "image_url": {
+                                    "url": f"data:image/png;base64,{img_b64}"
+                                }}
+                            ]
+                        }],
+                        'timeout': settings.VISION_OCR_TIMEOUT_SECONDS
+                    }
+                    
+                    # Add base_url if configured (for Ollama service)
+                    if settings.VISION_OCR_BASE_URL:
+                        completion_kwargs['base_url'] = settings.VISION_OCR_BASE_URL
+                    
+                    # Call vision model via LiteLLM
+                    loop = asyncio.get_event_loop()
+                    response = await asyncio.wait_for(
+                        loop.run_in_executor(None, lambda: completion(**completion_kwargs)),
+                        timeout=settings.VISION_OCR_TIMEOUT_SECONDS + 5
+                    )
+                    
+                    # Extract text from response
+                    page_text = response.choices[0].message.content
+                    extracted_pages.append(f"--- Page {idx + 1} ---\n{page_text}")
+                    logger.info(f"Vision OCR extracted {len(page_text)} chars from page {idx + 1}")
+                    
+                except asyncio.TimeoutError:
+                    warnings.append(f"Page {idx + 1} timed out after {settings.VISION_OCR_TIMEOUT_SECONDS}s")
+                    logger.warning(f"Vision OCR timeout on page {idx + 1}")
+                except Exception as e:
+                    warnings.append(f"Page {idx + 1} failed: {str(e)}")
+                    logger.error(f"Vision OCR error on page {idx + 1}: {e}", exc_info=True)
+            
+            # Combine all pages
+            full_text = "\n\n".join(extracted_pages)
+            word_count = len(full_text.split())
+            
+            # Consider failure if very little text and many errors
+            if word_count < 10 and len(warnings) >= len(images) * 0.5:
+                return {
+                    'success': False,
+                    'text': full_text,
+                    'method': 'vision-ocr',
+                    'page_count': len(images),
+                    'warnings': warnings
+                }
+            
+            logger.info(f"Vision OCR extracted {word_count} words from {len(images)} pages")
+            return {
+                'success': True,
+                'text': full_text,
+                'method': 'vision-ocr',
+                'page_count': len(images),
+                'warnings': warnings if warnings else None
+            }
+            
+        except Exception as e:
+            logger.error(f"Vision OCR failed: {e}", exc_info=True)
+            return {
+                'success': False,
+                'text': '',
+                'method': 'vision-ocr',
+                'warnings': [f"Vision OCR error: {str(e)}"]
+            }
+    
     async def _try_paddle_ocr_fallback(self, file_bytes: bytes) -> Dict:
         """Extract text from PDF using PaddleOCR as fallback for scanned PDFs."""
         try:
