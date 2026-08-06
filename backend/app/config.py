@@ -59,6 +59,30 @@ class Settings(BaseSettings):
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
 
+    # File Upload Settings
+    MAX_FILE_SIZE_MB: int = 5
+    MAX_FILES_PER_MESSAGE: int = 5
+    MAX_TOTAL_SIZE_MB: int = 10
+    ALLOWED_MIME_TYPES: list = [
+        "application/pdf",
+        "text/plain",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ]
+
+    # Extraction Settings
+    EXTRACTION_TIMEOUT_SECONDS: int = 30
+    OCR_ENABLED: bool = True
+    OCR_LANGUAGE: str = "en"
+    MIN_TEXT_WORDS_FOR_OCR: int = 100
+
+    # Attachment Storage
+    ATTACHMENT_EXPIRY_HOURS: int = 24
+    ATTACHMENT_CACHE_TTL_SECONDS: int = 3600
+
+    # Token Management
+    MAX_ATTACHMENT_WORDS_IN_PROMPT: int = 2000
+    TRUNCATE_LONG_ATTACHMENTS: bool = True
+
     class Config:
         env_file = ".env"
         case_sensitive = True
