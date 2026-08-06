@@ -250,6 +250,7 @@ class ConversationService:
         model_used: Optional[str] = None,
         token_count: int = 0,
         tool_executions: Optional[list] = None,
+        attachments: Optional[list] = None,
     ) -> Message:
         """
         Add a message to conversation.
@@ -262,6 +263,7 @@ class ConversationService:
             model_used: Model used (if role is "assistant")
             token_count: Estimated token count
             tool_executions: List of tool execution details
+            attachments: Optional list of attachment metadata dicts
 
         Returns:
             Created Message object
@@ -276,6 +278,7 @@ class ConversationService:
             model_used=model_used,
             token_count=token_count,
             tool_executions=tool_executions or [],
+            attachments=attachments or [],
         )
 
         db.add(message)

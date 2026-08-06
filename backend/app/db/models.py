@@ -106,6 +106,7 @@ class Message(Base):
     model_used = Column(String(100), nullable=True)  # Model ID used for this message (if assistant)
     token_count = Column(Integer, default=0, nullable=False)  # Estimated token count
     tool_executions = Column(JSON, default=[], nullable=False)  # List of tool executions
+    attachments = Column(JSON, default=[], nullable=False)  # List of attachment metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     # Relationships
