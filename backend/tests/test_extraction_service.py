@@ -389,3 +389,240 @@ class TestPaddleOCRFixes:
         # Verify final result is from OCR
         assert result.extraction_method == "paddle_ocr"
 
+
+class TestDOCXExtraction:
+    """Test DOCX extraction functionality."""
+
+    @pytest.fixture
+    def service(self):
+        """Create an ExtractionService instance."""
+        return ExtractionService()
+
+    @pytest.mark.asyncio
+    async def test_extract_docx_simple_document(self, service):
+        """Extract text from simple DOCX document."""
+        import tempfile
+        from docx import Document
+        
+        # Create a test DOCX file
+        doc = Document()
+        doc.add_paragraph("This is a test document.")
+        doc.add_paragraph("It has multiple paragraphs.")
+        
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
+            doc.save(f.name)
+            temp_path = f.name
+        
+        try:
+            result = await service.extract_docx(temp_path)
+            
+            assert isinstance(result, ExtractionResult)
+            assert "test document" in result.extracted_text
+            assert "multiple paragraphs" in result.extracted_text
+            assert result.word_count > 0
+            assert result.extraction_method == "python-docx"
+            assert result.error is None
+        finally:
+            Path(temp_path).unlink()
+
+    @pytest.mark.asyncio
+    async def test_extract_docx_with_table_formatting(self, service):
+        """Extract text from DOCX with table formatting preserved."""
+        import tempfile
+        from docx import Document
+        from docx.shared import Pt
+        
+        # Create a test DOCX with table
+        doc = Document()
+        doc.add_paragraph("Document with table:")
+        table = doc.add_table(rows=2, cols=2)
+        table.rows[0].cells[0].text = "Header 1"
+        table.rows[0].cells[1].text = "Header 2"
+        table.rows[1].cells[0].text = "Data 1"
+        table.rows[1].cells[1].text = "Data 2"
+        
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
+            doc.save(f.name)
+            temp_path = f.name
+        
+        try:
+            result = await service.extract_docx(temp_path)
+            
+            assert isinstance(result, ExtractionResult)
+            assert "table" in result.extracted_text.lower()
+            assert "Header 1" in result.extracted_text or "Header1" in result.extracted_text.replace(" ", "")
+            assert result.error is None
+        finally:
+            Path(temp_path).unlink()
+
+    @pytest.mark.asyncio
+    async def test_extract_docx_empty_document(self, service):
+        """Extract text from empty DOCX document."""
+        import tempfile
+        from docx import Document
+        
+        # Create empty DOCX
+        doc = Document()
+        
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
+            doc.save(f.name)
+            temp_path = f.name
+        
+        try:
+            result = await service.extract_docx(temp_path)
+            
+            assert isinstance(result, ExtractionResult)
+            assert result.extracted_text == ""
+            assert result.word_count == 0
+            assert result.error is None
+        finally:
+            Path(temp_path).unlink()
+
+    @pytest.mark.asyncio
+    async def test_extract_docx_file_not_found(self, service):
+        """Extract from non-existent DOCX file returns error."""
+        result = await service.extract_docx("/tmp/nonexistent_file_12345.docx")
+        
+        assert isinstance(result, ExtractionResult)
+        assert result.error is not None
+        assert "not found" in result.error.lower() or "cannot" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_extract_docx_word_count(self, service):
+        """Word count is calculated correctly for DOCX."""
+        import tempfile
+        from docx import Document
+        
+        # Create DOCX with known word count
+        doc = Document()
+        doc.add_paragraph("one two three four five")
+        
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
+            doc.save(f.name)
+            temp_path = f.name
+        
+        try:
+            result = await service.extract_docx(temp_path)
+            
+            assert result.word_count == 5
+        finally:
+            Path(temp_path).unlink()
+
+    @pytest.mark.asyncio
+    async def test_extract_docx_invalid_file(self, service):
+        """Extract from invalid DOCX file returns error."""
+        import tempfile
+        
+        # Create a file that's not a valid DOCX
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
+            f.write(b"This is not a valid DOCX file")
+            temp_path = f.name
+        
+        try:
+            result = await service.extract_docx(temp_path)
+            
+            assert isinstance(result, ExtractionResult)
+            assert result.error is not None
+        finally:
+            Path(temp_path).unlink()
+
+
+class TestTextExtraction:
+    """Test plain text extraction functionality."""
+
+    @pytest.fixture
+    def service(self):
+        """Create an ExtractionService instance."""
+        return ExtractionService()
+
+    @pytest.mark.asyncio
+    async def test_extract_text_utf8(self, service):
+        """Extract plain text with UTF-8 encoding."""
+        import tempfile
+        
+        # Create a UTF-8 text file
+        text_content = "This is a test document.\nWith multiple lines.\nAnd UTF-8 encoding: café"
+        
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix=".txt", delete=False) as f:
+            f.write(text_content)
+            temp_path = f.name
+        
+        try:
+            result = await service.extract_text(temp_path)
+            
+            assert isinstance(result, ExtractionResult)
+            assert "test document" in result.extracted_text
+            assert "café" in result.extracted_text
+            assert result.word_count > 0
+            assert result.extraction_method.startswith("text-")
+            assert result.error is None
+        finally:
+            Path(temp_path).unlink()
+
+    @pytest.mark.asyncio
+    async def test_extract_text_latin1_fallback(self, service):
+        """Extract plain text with latin-1 encoding fallback."""
+        import tempfile
+        
+        # Create a latin-1 encoded file
+        text_content = "This is a test with special chars: café naïve"
+        
+        with tempfile.NamedTemporaryFile(mode='wb', suffix=".txt", delete=False) as f:
+            f.write(text_content.encode('latin-1'))
+            temp_path = f.name
+        
+        try:
+            result = await service.extract_text(temp_path)
+            
+            assert isinstance(result, ExtractionResult)
+            assert result.extracted_text is not None
+            assert result.word_count > 0
+            assert result.error is None
+        finally:
+            Path(temp_path).unlink()
+
+    @pytest.mark.asyncio
+    async def test_extract_text_empty_file(self, service):
+        """Extract from empty text file."""
+        import tempfile
+        
+        # Create empty file
+        with tempfile.NamedTemporaryFile(mode='w', suffix=".txt", delete=False) as f:
+            temp_path = f.name
+        
+        try:
+            result = await service.extract_text(temp_path)
+            
+            assert isinstance(result, ExtractionResult)
+            assert result.extracted_text == ""
+            assert result.word_count == 0
+            assert result.error is None
+        finally:
+            Path(temp_path).unlink()
+
+    @pytest.mark.asyncio
+    async def test_extract_text_word_count(self, service):
+        """Word count is calculated correctly for plain text."""
+        import tempfile
+        
+        # Create text with known word count
+        with tempfile.NamedTemporaryFile(mode='w', suffix=".txt", delete=False) as f:
+            f.write("one two three four five")
+            temp_path = f.name
+        
+        try:
+            result = await service.extract_text(temp_path)
+            
+            assert result.word_count == 5
+        finally:
+            Path(temp_path).unlink()
+
+    @pytest.mark.asyncio
+    async def test_extract_text_file_not_found(self, service):
+        """Extract from non-existent text file returns error."""
+        result = await service.extract_text("/tmp/nonexistent_file_12345.txt")
+        
+        assert isinstance(result, ExtractionResult)
+        assert result.error is not None
+        assert "not found" in result.error.lower() or "cannot" in result.error.lower()
+

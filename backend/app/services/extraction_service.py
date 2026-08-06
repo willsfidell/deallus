@@ -325,11 +325,112 @@ class ExtractionService:
             return {'success': False}
     
     async def extract_docx(self, file_path: str) -> ExtractionResult:
-        """Extract text from DOCX using python-docx."""
-        # Implemented in next task
-        raise NotImplementedError
+        """Extract text from DOCX using python-docx.
+        
+        Args:
+            file_path: Path to DOCX file to read
+        
+        Returns:
+            ExtractionResult with extracted text and metadata
+        """
+        start_time = time.time()
+        
+        try:
+            from docx import Document
+            
+            # Open and read DOCX
+            doc = Document(file_path)
+            
+            # Extract text from paragraphs
+            text_parts = []
+            for para in doc.paragraphs:
+                text_parts.append(para.text)
+            
+            # Extract text from tables (preserve table formatting)
+            for table in doc.tables:
+                for row in table.rows:
+                    row_cells = []
+                    for cell in row.cells:
+                        row_cells.append(cell.text)
+                    text_parts.append(" | ".join(row_cells))
+            
+            extracted_text = "\n".join(text_parts)
+            word_count = len(extracted_text.split()) if extracted_text else 0
+            
+            logger.info(f"Extracted {word_count} words from DOCX {file_path}")
+            
+            return ExtractionResult(
+                extracted_text=extracted_text,
+                word_count=word_count,
+                extraction_method="python-docx",
+                processing_time_ms=(time.time() - start_time) * 1000
+            )
+            
+        except FileNotFoundError:
+            logger.error(f"DOCX file not found: {file_path}")
+            return ExtractionResult(
+                extracted_text="",
+                error=f"DOCX file not found: {file_path}",
+                processing_time_ms=(time.time() - start_time) * 1000
+            )
+        except Exception as e:
+            logger.error(f"DOCX extraction failed: {e}", exc_info=True)
+            return ExtractionResult(
+                extracted_text="",
+                error=f"Could not extract text from DOCX: {str(e)}",
+                processing_time_ms=(time.time() - start_time) * 1000
+            )
     
     async def extract_text(self, file_path: str) -> ExtractionResult:
-        """Extract plain text with encoding detection."""
-        # Implemented in next task
-        raise NotImplementedError
+        """Extract plain text with encoding detection.
+        
+        Args:
+            file_path: Path to text file to read
+        
+        Returns:
+            ExtractionResult with extracted text and metadata
+        """
+        import chardet
+        
+        start_time = time.time()
+        
+        try:
+            # Try multiple encodings
+            with open(file_path, 'rb') as f:
+                raw_data = f.read()
+            
+            # Detect encoding
+            detected = chardet.detect(raw_data)
+            encoding = detected.get('encoding') or 'utf-8'
+            
+            try:
+                text = raw_data.decode(encoding)
+            except (UnicodeDecodeError, TypeError, LookupError):
+                # Fallback to latin-1 which always works
+                text = raw_data.decode('latin-1', errors='ignore')
+                encoding = 'latin-1'
+            
+            word_count = len(text.split()) if text else 0
+            logger.info(f"Extracted {word_count} words from text file using {encoding}")
+            
+            return ExtractionResult(
+                extracted_text=text,
+                word_count=word_count,
+                extraction_method=f"text-{encoding}",
+                processing_time_ms=(time.time() - start_time) * 1000
+            )
+            
+        except FileNotFoundError:
+            logger.error(f"Text file not found: {file_path}")
+            return ExtractionResult(
+                extracted_text="",
+                error=f"Text file not found: {file_path}",
+                processing_time_ms=(time.time() - start_time) * 1000
+            )
+        except Exception as e:
+            logger.error(f"Text extraction failed: {e}", exc_info=True)
+            return ExtractionResult(
+                extracted_text="",
+                error=f"Could not read text file: {str(e)}",
+                processing_time_ms=(time.time() - start_time) * 1000
+            )
