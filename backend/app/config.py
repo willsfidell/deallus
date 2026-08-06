@@ -83,6 +83,18 @@ class Settings(BaseSettings):
     MAX_ATTACHMENT_WORDS_IN_PROMPT: int = 2000
     TRUNCATE_LONG_ATTACHMENTS: bool = True
 
+    # Vision Model OCR (via LiteLLM/Ollama) - GPU in separate container
+    VISION_OCR_ENABLED: bool = False  # Toggle for vision model OCR
+    VISION_OCR_MODEL: str = "ollama/qwen2-vl:7b"  # LiteLLM model identifier
+    VISION_OCR_BASE_URL: Optional[str] = None  # Ollama base URL (e.g., http://ollama:11434)
+    VISION_OCR_TIMEOUT_SECONDS: int = 45  # Per-page timeout for vision model
+    VISION_OCR_MAX_RETRIES: int = 1  # Retry on transient failures
+    VISION_OCR_PROMPT: str = "Extract all text from this document page. Return only the extracted text, preserving layout and structure as much as possible."
+
+    # OCR Strategy
+    OCR_FALLBACK_ENABLED: bool = True  # Fall back to PaddleOCR CPU if vision fails
+    PADDLEOCR_USE_GPU: bool = False  # Explicitly set PaddleOCR to CPU-only (no GPU in API container)
+
     class Config:
         env_file = ".env"
         case_sensitive = True
