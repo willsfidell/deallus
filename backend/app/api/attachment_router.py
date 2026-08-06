@@ -193,3 +193,99 @@ async def upload_attachment(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="File upload failed"
         )
+
+
+@router.get("/{attachment_id}")
+async def get_attachment(
+    attachment_id: str,
+    user: User = Depends(verify_api_key_header),
+    db: Session = Depends(get_db),
+):
+    """Get attachment status and extracted text."""
+    try:
+        # Verify ownership
+        attachment = db.query(Attachment).filter(
+            Attachment.id == attachment_id,
+            Attachment.user_id == user.id
+        ).first()
+        
+        if not attachment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attachment not found"
+            )
+        
+        # Check Redis cache first
+        redis = await RedisService.get_instance()
+        if redis:
+            cached = await redis.get(f"attachment:{attachment_id}")
+            if cached:
+                logger.debug(f"Attachment {attachment_id} from cache")
+        
+        response = AttachmentResponse(attachment, preview_length=200)
+        response_dict = response.dict()
+        
+        # Include full text if completed
+        if attachment.extraction_status == "completed":
+            response_dict["extracted_text"] = attachment.extracted_text
+        
+        # Include warnings if any
+        if attachment.extraction_error:
+            response_dict["error"] = attachment.extraction_error
+        
+        return response_dict
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get attachment: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get attachment"
+        )
+
+
+@router.delete("/{attachment_id}")
+async def delete_attachment(
+    attachment_id: str,
+    user: User = Depends(verify_api_key_header),
+    db: Session = Depends(get_db),
+):
+    """Delete attachment before message send."""
+    try:
+        # Verify ownership
+        attachment = db.query(Attachment).filter(
+            Attachment.id == attachment_id,
+            Attachment.user_id == user.id
+        ).first()
+        
+        if not attachment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attachment not found"
+            )
+        
+        # Delete from DB
+        db.delete(attachment)
+        db.commit()
+        
+        # Delete from Redis cache
+        redis = await RedisService.get_instance()
+        if redis:
+            try:
+                await redis.delete(f"attachment:{attachment_id}")
+            except:
+                pass
+        
+        logger.info(f"Deleted attachment: {attachment_id}")
+        
+        return {"message": "Attachment deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete attachment: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete attachment"
+        )
