@@ -18,7 +18,7 @@ from app.models.schemas import ProcessRequest, ProcessResponse
 from app.tools.registry import tool_registry
 from app.services import get_llm_service, LLMError, ContextManager, RedisService
 from app.services.conversation_service import ConversationService
-from app.db.models import Message
+from app.db.models import Message, Attachment
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -214,6 +214,34 @@ async def process(
                     f"[{request_id}] Summarization failed: {e}. Continuing without summarization..."
                 )
 
+        # Load attachments if provided
+        attachment_texts = []
+        if request.attachment_ids:
+            logger.info(f"[{request_id}] Loading {len(request.attachment_ids)} attachments")
+            
+            for att_id in request.attachment_ids:
+                attachment = db.query(Attachment).filter(
+                    Attachment.id == att_id,
+                    Attachment.user_id == user.id
+                ).first()
+                
+                if not attachment:
+                    logger.warning(f"[{request_id}] Attachment not found: {att_id}")
+                    continue
+                
+                if attachment.extraction_status != "completed":
+                    logger.warning(f"[{request_id}] Attachment not ready: {att_id}")
+                    continue
+                
+                attachment_texts.append({
+                    "id": attachment.id,
+                    "filename": attachment.filename,
+                    "text": attachment.extracted_text,
+                    "word_count": attachment.word_count,
+                })
+        else:
+            attachment_texts = []
+
         # Step 1: Run pre-prompt tools
         logger.info(f"[{request_id}] Processing prompt from user {user.email}")
         logger.info(f"[{request_id}] Running pre-prompt tools")
@@ -249,6 +277,25 @@ async def process(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Tool execution error: {str(e)}",
             )
+
+        # Build enhanced prompt with attachments
+        enhanced_prompt = modified_prompt
+        if attachment_texts:
+            prompt_parts = []
+            
+            for att in attachment_texts:
+                # Truncate if needed
+                text = att["text"]
+                if len(text.split()) > settings.MAX_ATTACHMENT_WORDS_IN_PROMPT:
+                    truncated = " ".join(text.split()[:settings.MAX_ATTACHMENT_WORDS_IN_PROMPT])
+                    text = truncated + f"\n[... {att['word_count'] - settings.MAX_ATTACHMENT_WORDS_IN_PROMPT} words omitted]"
+                
+                prompt_parts.append(f"[File: {att['filename']}]\n{text}")
+            
+            enhanced_prompt = "\n\n".join(prompt_parts) + "\n\nUser question: " + modified_prompt
+            logger.info(f"[{request_id}] Enhanced prompt with {len(attachment_texts)} attachments")
+        else:
+            enhanced_prompt = modified_prompt
 
         # Step 2: Route to model (with contextual routing if previous_model exists)
         logger.info(f"[{request_id}] Routing prompt to model")
@@ -300,7 +347,7 @@ async def process(
         try:
             llm_service = get_llm_service()
             llm_response = await llm_service.generate(
-                prompt=modified_prompt,
+                prompt=enhanced_prompt,
                 model=model_to_use,
                 max_tokens=500,
                 temperature=0.7,
@@ -352,6 +399,27 @@ async def process(
         logger.info(f"[{request_id}] Storing messages in conversation")
 
         try:
+            # Prepare attachment data for storage
+            message_attachments = []
+            for att_id in (request.attachment_ids or []):
+                attachment = db.query(Attachment).filter(
+                    Attachment.id == att_id,
+                    Attachment.user_id == user.id
+                ).first()
+                
+                if attachment and attachment.extraction_status == "completed":
+                    message_attachments.append({
+                        "id": attachment.id,
+                        "filename": attachment.filename,
+                        "mime_type": attachment.mime_type,
+                        "size_bytes": attachment.size_bytes,
+                        "extracted_text": attachment.extracted_text,
+                        "page_count": attachment.page_count,
+                        "word_count": attachment.word_count,
+                        "extraction_method": attachment.extraction_method,
+                        "ocr_applied": attachment.ocr_applied,
+                    })
+
             # Store user message
             user_token_count = context_manager.estimate_tokens(modified_prompt)
             conversation_service.add_message(
@@ -361,6 +429,7 @@ async def process(
                 db=db,
                 token_count=user_token_count,
                 tool_executions=tools_executed,
+                attachments=message_attachments,
             )
 
             # Check if this is the first user message -> trigger title generation
@@ -396,6 +465,19 @@ async def process(
             )
 
             logger.info(f"[{request_id}] Messages stored in conversation")
+
+            # Cleanup temporary attachment records
+            if request.attachment_ids:
+                for att_id in request.attachment_ids:
+                    attachment = db.query(Attachment).filter(
+                        Attachment.id == att_id
+                    ).first()
+                    
+                    if attachment:
+                        db.delete(attachment)
+                
+                db.commit()
+                logger.info(f"[{request_id}] Cleaned up {len(request.attachment_ids)} temporary attachments")
 
         except Exception as e:
             logger.error(f"[{request_id}] Error storing conversation messages: {e}")
