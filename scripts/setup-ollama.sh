@@ -16,7 +16,11 @@ echo "📦 Pulling qwen2-vl:7b vision model (5-10 minutes, ~4.5GB)..."
 docker exec aidi_ollama ollama pull qwen2-vl:7b
 
 echo ""
-echo "✅ Model pulled successfully!"
+echo "📦 Pulling whisper model for voice transcription (2-5 minutes, ~3GB)..."
+docker exec aidi_ollama ollama pull whisper
+
+echo ""
+echo "✅ Models pulled successfully!"
 echo ""
 echo "📋 Available models:"
 docker exec aidi_ollama ollama list
