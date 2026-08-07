@@ -1,209 +1,195 @@
+import 'dart:async';
+import 'dart:io';
+import 'package:record/record.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:logger/logger.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:record/record.dart';
-import 'dart:io';
 
-import '../config/app_constants.dart';
-import '../models/exceptions.dart';
+enum RecordingState {
+  idle,
+  recording,
+  processing,
+}
 
-/// Service for audio recording
-class AudioService {
-  late final AudioRecorder _recorder;
+class AudioRecorderService {
+  static final AudioRecorderService _instance =
+      AudioRecorderService._internal();
+  late final AudioRecorder _audioRecorder;
   final Logger _logger = Logger();
-  
-  String? _currentRecordingPath;
-  bool _isRecording = false;
 
-  AudioService() {
-    _recorder = AudioRecorder();
+  RecordingState _state = RecordingState.idle;
+  final _stateController = StreamController<RecordingState>.broadcast();
+  final _timerController = StreamController<Duration>.broadcast();
+  final _amplitudeController = StreamController<double>.broadcast();
+
+  Timer? _timerTimer;
+  Duration _recordingDuration = Duration.zero;
+  final Duration _maxRecordingDuration = const Duration(minutes: 2);
+
+  factory AudioRecorderService() {
+    return _instance;
   }
+
+  AudioRecorderService._internal() {
+    _audioRecorder = AudioRecorder();
+  }
+
+  // State management
+  RecordingState get state => _state;
+  Stream<RecordingState> get stateStream => _stateController.stream;
+
+  Stream<Duration> getTimerStream() => _timerController.stream;
+  Stream<double> getAmplitudeStream() => _amplitudeController.stream;
 
   /// Request microphone permission
-  Future<bool> requestMicrophonePermission() async {
+  Future<bool> requestPermission() async {
     try {
       final status = await Permission.microphone.request();
-      
-      if (status.isDenied) {
-        _logger.w('Microphone permission denied');
-        return false;
-      }
-      
-      if (status.isPermanentlyDenied) {
-        _logger.w('Microphone permission permanently denied');
-        openAppSettings();
-        return false;
-      }
-      
-      _logger.d('Microphone permission granted');
-      return true;
-    } catch (e) {
-      _logger.e('Failed to request microphone permission', error: e);
-      throw AudioException(
-        message: 'Failed to request permission: $e',
-        originalException: e,
-      );
-    }
-  }
-
-  /// Check if microphone permission is granted
-  Future<bool> hasMicrophonePermission() async {
-    try {
-      final status = await Permission.microphone.status;
+      _logger.i('Microphone permission: $status');
       return status.isGranted;
     } catch (e) {
-      _logger.e('Failed to check microphone permission', error: e);
+      _logger.e('Error requesting microphone permission: $e');
       return false;
     }
   }
 
-  /// Start recording audio
-  Future<void> startRecording() async {
+  /// Check if microphone permission is granted
+  Future<bool> hasPermission() async {
     try {
-      // Check permission
-      final hasPermission = await hasMicrophonePermission();
+      final status = await Permission.microphone.status;
+      return status.isGranted;
+    } catch (e) {
+      _logger.e('Error checking microphone permission: $e');
+      return false;
+    }
+  }
+
+  /// Start recording
+  Future<bool> startRecording() async {
+    try {
+      final hasPermission = await this.hasPermission();
       if (!hasPermission) {
-        final granted = await requestMicrophonePermission();
-        if (!granted) {
-          throw AudioException(
-            message: 'Microphone permission not granted',
-          );
-        }
+        _logger.w('Microphone permission not granted');
+        return false;
+      }
+
+      // Check if already recording
+      if (_state == RecordingState.recording) {
+        _logger.w('Already recording');
+        return false;
       }
 
       // Get temporary directory
       final tempDir = await getTemporaryDirectory();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      _currentRecordingPath = '${tempDir.path}/audio_$timestamp.wav';
+      final recordingPath =
+          '${tempDir.path}/voice_recording_${DateTime.now().millisecondsSinceEpoch}.wav';
 
-      // Start recording WAV format at 16kHz
-      await _recorder.start(
+      // Start recording - use the file path directly
+      await _audioRecorder.start(
         RecordConfig(
           encoder: AudioEncoder.wav,
-          sampleRate: AppConstants.audioSampleRate,
-          numChannels: 1, // Mono
-          bitRate: 256000,
+          bitRate: 128000,
+          sampleRate: 16000,
         ),
-        path: _currentRecordingPath!,
+        path: recordingPath,
       );
 
-      _isRecording = true;
-      _logger.d('Recording started: $_currentRecordingPath');
+      _state = RecordingState.recording;
+      _recordingDuration = Duration.zero;
+      _stateController.add(_state);
+
+      _logger.i('Recording started: $recordingPath');
+
+      // Start timer for recording duration
+      _startTimer();
+
+      return true;
     } catch (e) {
-      _logger.e('Failed to start recording', error: e);
-      throw AudioException(
-        message: 'Failed to start recording: $e',
-        originalException: e,
-      );
+      _logger.e('Error starting recording: $e');
+      _state = RecordingState.idle;
+      _stateController.add(_state);
+      return false;
     }
   }
 
   /// Stop recording and return file path
-  Future<String> stopRecording() async {
+  Future<String?> stopRecording() async {
     try {
-      final path = await _recorder.stop();
-      _isRecording = false;
-      
-      if (path == null) {
-        throw AudioException(
-          message: 'Failed to stop recording',
-        );
+      if (_state != RecordingState.recording) {
+        _logger.w('Not currently recording');
+        return null;
       }
 
-      _logger.d('Recording stopped: $path');
+      _stopTimer();
+      _state = RecordingState.processing;
+      _stateController.add(_state);
+
+      final path = await _audioRecorder.stop();
+      _logger.i('Recording stopped: $path');
+
+      _state = RecordingState.idle;
+      _stateController.add(_state);
+
       return path;
     } catch (e) {
-      _logger.e('Failed to stop recording', error: e);
-      throw AudioException(
-        message: 'Failed to stop recording: $e',
-        originalException: e,
-      );
+      _logger.e('Error stopping recording: $e');
+      _state = RecordingState.idle;
+      _stateController.add(_state);
+      return null;
     }
   }
 
-  /// Cancel recording and delete file
+  /// Cancel recording and discard file
   Future<void> cancelRecording() async {
     try {
-      await _recorder.stop();
-      _isRecording = false;
+      _stopTimer();
 
-      if (_currentRecordingPath != null) {
-        final file = File(_currentRecordingPath!);
-        if (await file.exists()) {
-          await file.delete();
-          _logger.d('Recording file deleted: $_currentRecordingPath');
-        }
+      await _audioRecorder.stop();
+
+      _state = RecordingState.idle;
+      _stateController.add(_state);
+      _logger.i('Recording cancelled');
+    } catch (e) {
+      _logger.e('Error cancelling recording: $e');
+      _state = RecordingState.idle;
+      _stateController.add(_state);
+    }
+  }
+
+  /// Start timer for recording duration
+  void _startTimer() {
+    _timerTimer?.cancel();
+    _timerTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      _recordingDuration += const Duration(milliseconds: 100);
+      _timerController.add(_recordingDuration);
+
+      // Auto-stop at 2 minutes
+      if (_recordingDuration >= _maxRecordingDuration) {
+        _logger.i('Recording duration limit reached (2 minutes)');
+        stopRecording();
       }
-
-      _currentRecordingPath = null;
-    } catch (e) {
-      _logger.e('Failed to cancel recording', error: e);
-      throw AudioException(
-        message: 'Failed to cancel recording: $e',
-        originalException: e,
-      );
-    }
+    });
   }
 
-  /// Get recording duration
-  Future<Duration> getRecordingDuration(String filePath) async {
-    try {
-      final duration = await _recorder.getDuration(filePath);
-      return duration ?? Duration.zero;
-    } catch (e) {
-      _logger.e('Failed to get recording duration', error: e);
-      return Duration.zero;
-    }
+  /// Stop timer
+  void _stopTimer() {
+    _timerTimer?.cancel();
+    _timerTimer = null;
   }
 
-  /// Check if recording is in progress
-  bool get isRecording => _isRecording;
+  /// Get current recording duration
+  Duration get recordingDuration => _recordingDuration;
 
-  /// Get current recording path
-  String? get currentRecordingPath => _currentRecordingPath;
+  /// Get remaining recording time
+  Duration get remainingTime =>
+      _maxRecordingDuration - _recordingDuration;
 
-  /// Get file size in MB
-  Future<double> getFileSizeMB(String filePath) async {
-    try {
-      final file = File(filePath);
-      if (await file.exists()) {
-        final bytes = await file.length();
-        return bytes / (1024 * 1024);
-      }
-      return 0;
-    } catch (e) {
-      _logger.e('Failed to get file size', error: e);
-      return 0;
-    }
-  }
-
-  /// Delete recording file
-  Future<void> deleteRecording(String filePath) async {
-    try {
-      final file = File(filePath);
-      if (await file.exists()) {
-        await file.delete();
-        _logger.d('Recording file deleted: $filePath');
-      }
-    } catch (e) {
-      _logger.e('Failed to delete recording', error: e);
-      throw AudioException(
-        message: 'Failed to delete recording: $e',
-        originalException: e,
-      );
-    }
-  }
-
-  /// Clean up resources
+  /// Cleanup resources
   Future<void> dispose() async {
-    try {
-      if (_isRecording) {
-        await stopRecording();
-      }
-      await _recorder.dispose();
-      _logger.d('Audio service disposed');
-    } catch (e) {
-      _logger.e('Failed to dispose audio service', error: e);
-    }
+    _timerTimer?.cancel();
+    _timerController.close();
+    _amplitudeController.close();
+    _stateController.close();
+    await _audioRecorder.dispose();
   }
 }
