@@ -1,6 +1,5 @@
 import 'dart:io';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 import 'package:logger/logger.dart';
 
 class TranscriptionService {
@@ -8,13 +7,20 @@ class TranscriptionService {
       TranscriptionService._internal();
 
   final Logger _logger = Logger();
+  late final Dio _dio;
   final String _baseUrl = 'http://localhost:8000';
 
   factory TranscriptionService() {
     return _instance;
   }
 
-  TranscriptionService._internal();
+  TranscriptionService._internal() {
+    _dio = Dio(BaseOptions(
+      baseUrl: _baseUrl,
+      connectTimeout: const Duration(seconds: 70),
+      receiveTimeout: const Duration(seconds: 70),
+    ));
+  }
 
   Future<String> transcribeAudio(File audioFile, String apiKey) async {
     try {
@@ -28,58 +34,59 @@ class TranscriptionService {
       final fileSizeMB = fileSize / (1024 * 1024);
       _logger.i('Audio file size: ${fileSizeMB.toStringAsFixed(2)}MB');
 
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$_baseUrl/api/transcribe'),
-      );
-
-      request.files.add(
-        http.MultipartFile(
-          'file',
-          audioFile.openRead(),
-          fileSize,
+      // Create multipart form data
+      FormData formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(
+          audioFile.path,
           filename: 'recording.wav',
         ),
-      );
-
-      request.headers['X-API-Key'] = apiKey;
+      });
 
       _logger.i('Sending transcription request to $_baseUrl/api/transcribe');
-      final streamedResponse = await request.send().timeout(
-        const Duration(seconds: 70),
-        onTimeout: () {
-          _logger.e('Transcription request timeout');
-          throw Exception(
-              'Transcription timeout - server took too long to respond');
-        },
-      );
 
-      final response = await http.Response.fromStream(streamedResponse);
+      final response = await _dio.post(
+        '/api/transcribe',
+        data: formData,
+        options: Options(
+          headers: {
+            'X-API-Key': apiKey,
+          },
+        ),
+      );
 
       _logger.i('Transcription response: ${response.statusCode}');
 
       if (response.statusCode == 200) {
-        final Map<String, dynamic> json = jsonDecode(response.body);
-
-        final text = json['text'] as String?;
+        final data = response.data;
+        final text = data['text'] as String?;
+        
         if (text == null || text.isEmpty) {
           throw Exception('No text in transcription response');
         }
 
         _logger.i('Transcription successful: ${text.length} characters');
         return text;
-      } else if (response.statusCode == 400) {
-        throw Exception('Invalid audio format or missing file');
-      } else if (response.statusCode == 413) {
-        throw Exception('Audio file too large (max 10MB)');
-      } else if (response.statusCode == 500) {
-        throw Exception('Transcription failed on server');
-      } else if (response.statusCode == 503) {
-        throw Exception('Transcription service unavailable');
       } else {
         throw Exception(
-          'Transcription failed: ${response.statusCode} - ${response.body}',
+          'Transcription failed: ${response.statusCode}',
         );
+      }
+    } on DioException catch (e) {
+      _logger.e('Dio error: ${e.message}');
+      
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout) {
+        throw Exception('Transcription timeout - server took too long to respond');
+      } else if (e.response?.statusCode == 400) {
+        throw Exception('Invalid audio format or missing file');
+      } else if (e.response?.statusCode == 413) {
+        throw Exception('Audio file too large (max 10MB)');
+      } else if (e.response?.statusCode == 500) {
+        throw Exception('Transcription failed on server');
+      } else if (e.response?.statusCode == 503) {
+        throw Exception('Transcription service unavailable');
+      } else {
+        throw Exception('Transcription failed: ${e.message}');
       }
     } catch (e) {
       _logger.e('Transcription error: $e');
