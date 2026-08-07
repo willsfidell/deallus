@@ -498,7 +498,9 @@ class ExtractionService:
             return {'success': False}
     
     async def extract_docx(self, file_path: str) -> ExtractionResult:
-        """Extract text from DOCX using python-docx.
+        """Extract text from DOCX using python-docx with fallback to ZIP parsing.
+        
+        Handles both standard MS Office and OpenOffice DOCX formats.
         
         Args:
             file_path: Path to DOCX file to read
@@ -509,36 +511,68 @@ class ExtractionService:
         start_time = time.time()
         
         try:
-            from docx import Document
+            # Read file into memory first
+            with open(file_path, 'rb') as f:
+                file_bytes = f.read()
             
-            # Open and read DOCX
-            doc = Document(file_path)
-            
-            # Extract text from paragraphs
-            text_parts = []
-            for para in doc.paragraphs:
-                text_parts.append(para.text)
-            
-            # Extract text from tables (preserve table formatting)
-            for table in doc.tables:
-                for row in table.rows:
-                    row_cells = []
-                    for cell in row.cells:
-                        row_cells.append(cell.text)
-                    text_parts.append(" | ".join(row_cells))
-            
-            extracted_text = "\n".join(text_parts)
-            word_count = len(extracted_text.split()) if extracted_text else 0
-            
-            logger.info(f"Extracted {word_count} words from DOCX {file_path}")
-            
-            return ExtractionResult(
-                extracted_text=extracted_text,
-                word_count=word_count,
-                extraction_method="python-docx",
-                processing_time_ms=(time.time() - start_time) * 1000
-            )
-            
+            # Try python-docx first (best quality)
+            try:
+                from docx import Document
+                from io import BytesIO
+                
+                doc = Document(BytesIO(file_bytes))
+                
+                # Extract text from paragraphs
+                text_parts = []
+                for para in doc.paragraphs:
+                    if para.text.strip():
+                        text_parts.append(para.text)
+                
+                # Extract text from tables (preserve table formatting)
+                for table in doc.tables:
+                    for row in table.rows:
+                        row_cells = [cell.text.strip() for cell in row.cells]
+                        if any(row_cells):  # Skip empty rows
+                            text_parts.append(" | ".join(row_cells))
+                
+                extracted_text = "\n".join(text_parts)
+                word_count = len(extracted_text.split()) if extracted_text else 0
+                
+                logger.info(f"Extracted {word_count} words from DOCX using python-docx")
+                
+                return ExtractionResult(
+                    extracted_text=extracted_text,
+                    word_count=word_count,
+                    extraction_method="python-docx",
+                    processing_time_ms=(time.time() - start_time) * 1000
+                )
+                
+            except Exception as docx_error:
+                # python-docx failed - try fallback ZIP/XML parsing
+                logger.warning(f"python-docx failed ({docx_error}), trying ZIP fallback")
+                
+                try:
+                    extracted_text = await self._extract_docx_from_zip(file_bytes)
+                    word_count = len(extracted_text.split()) if extracted_text else 0
+                    
+                    logger.info(f"Extracted {word_count} words from DOCX using ZIP fallback")
+                    
+                    return ExtractionResult(
+                        extracted_text=extracted_text,
+                        word_count=word_count,
+                        extraction_method="docx-zip-fallback",
+                        warnings=[f"Used fallback parser due to: {str(docx_error)[:100]}"],
+                        processing_time_ms=(time.time() - start_time) * 1000
+                    )
+                except Exception as zip_error:
+                    logger.error(f"Both DOCX parsers failed: {zip_error}", exc_info=True)
+                    return ExtractionResult(
+                        extracted_text="",
+                        error=f"Could not extract DOCX (tried python-docx and ZIP fallback): {str(zip_error)}",
+                        extraction_method="failed",
+                        processing_time_ms=(time.time() - start_time) * 1000
+                    )
+        
         except FileNotFoundError:
             logger.error(f"DOCX file not found: {file_path}")
             return ExtractionResult(
@@ -550,9 +584,63 @@ class ExtractionService:
             logger.error(f"DOCX extraction failed: {e}", exc_info=True)
             return ExtractionResult(
                 extracted_text="",
-                error=f"Could not extract text from DOCX: {str(e)}",
+                error=f"Could not read DOCX file: {str(e)}",
                 processing_time_ms=(time.time() - start_time) * 1000
             )
+    
+    async def _extract_docx_from_zip(self, file_bytes: bytes) -> str:
+        """Extract text from DOCX by parsing as ZIP + XML.
+        
+        Fallback method for DOCX files that fail with python-docx
+        (e.g., OpenOffice-created files).
+        
+        Args:
+            file_bytes: DOCX file as bytes
+        
+        Returns:
+            Extracted text string
+        """
+        import zipfile
+        import xml.etree.ElementTree as ET
+        from io import BytesIO
+        
+        try:
+            # DOCX is a ZIP archive containing XML files
+            with zipfile.ZipFile(BytesIO(file_bytes), 'r') as docx_zip:
+                # Main document content is in word/document.xml
+                if 'word/document.xml' not in docx_zip.namelist():
+                    raise ValueError("Not a valid DOCX file (missing word/document.xml)")
+                
+                # Parse the main document XML
+                xml_content = docx_zip.read('word/document.xml')
+                root = ET.fromstring(xml_content)
+                
+                # Define namespace for Word XML
+                ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+                
+                # Extract all text elements
+                text_parts = []
+                
+                # Get all paragraph text nodes (w:t elements)
+                for t_element in root.findall('.//w:t', ns):
+                    if t_element.text:
+                        text_parts.append(t_element.text)
+                
+                # Join text parts with spaces (preserve word boundaries)
+                extracted_text = ' '.join(text_parts)
+                
+                # Clean up multiple spaces
+                import re
+                extracted_text = re.sub(r'\s+', ' ', extracted_text).strip()
+                
+                return extracted_text
+                
+        except zipfile.BadZipFile:
+            raise ValueError("File is not a valid ZIP/DOCX archive")
+        except ET.ParseError as e:
+            raise ValueError(f"Failed to parse DOCX XML: {e}")
+        except Exception as e:
+            raise ValueError(f"ZIP extraction failed: {e}")
     
     async def extract_text(self, file_path: str) -> ExtractionResult:
         """Extract plain text with encoding detection.

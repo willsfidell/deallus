@@ -683,3 +683,109 @@ class TestVisionOCR:
         # Should be None or a string, but not required
         assert settings.VISION_OCR_BASE_URL is None or isinstance(settings.VISION_OCR_BASE_URL, str)
 
+
+class TestDOCXFallback:
+    """Tests for DOCX extraction fallback handling (e.g., OpenOffice files)."""
+    
+    @pytest.mark.asyncio
+    async def test_extract_docx_with_bytesio(self, tmp_path):
+        """Test DOCX extraction using BytesIO approach."""
+        from docx import Document
+        
+        # Create a standard DOCX
+        doc_path = tmp_path / "test.docx"
+        doc = Document()
+        doc.add_paragraph("This is a test document.")
+        doc.add_paragraph("Second paragraph here.")
+        doc.save(str(doc_path))
+        
+        service = ExtractionService()
+        result = await service.extract_docx(str(doc_path))
+        
+        assert result.word_count > 0
+        assert "test document" in result.extracted_text.lower()
+        assert result.extraction_method == "python-docx"
+        assert result.error is None
+    
+    @pytest.mark.asyncio
+    async def test_extract_docx_zip_fallback_method(self):
+        """Test ZIP fallback extraction directly."""
+        import zipfile
+        from io import BytesIO
+        
+        service = ExtractionService()
+        
+        # Create minimal DOCX structure as ZIP (OpenOffice-style)
+        docx_bytes = BytesIO()
+        with zipfile.ZipFile(docx_bytes, 'w') as zf:
+            # Minimal word/document.xml with OpenXML namespace
+            doc_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:body>
+                    <w:p><w:r><w:t>Test text from OpenOffice</w:t></w:r></w:p>
+                    <w:p><w:r><w:t>Second paragraph</w:t></w:r></w:p>
+                </w:body>
+            </w:document>'''
+            zf.writestr('word/document.xml', doc_xml)
+        
+        # Test ZIP fallback extraction
+        extracted = await service._extract_docx_from_zip(docx_bytes.getvalue())
+        
+        assert "OpenOffice" in extracted
+        assert "Second paragraph" in extracted
+    
+    @pytest.mark.asyncio
+    async def test_extract_docx_invalid_zip(self):
+        """Test handling of invalid ZIP/DOCX files."""
+        service = ExtractionService()
+        
+        # Not a ZIP file
+        with pytest.raises(ValueError, match="not a valid ZIP"):
+            await service._extract_docx_from_zip(b"not a zip file at all")
+    
+    @pytest.mark.asyncio
+    async def test_extract_docx_missing_document_xml(self):
+        """Test handling of DOCX missing document.xml."""
+        import zipfile
+        from io import BytesIO
+        
+        service = ExtractionService()
+        
+        # Create ZIP without word/document.xml
+        docx_bytes = BytesIO()
+        with zipfile.ZipFile(docx_bytes, 'w') as zf:
+            zf.writestr('_rels/.rels', '<Relationships/>')
+        
+        with pytest.raises(ValueError, match="missing word/document.xml"):
+            await service._extract_docx_from_zip(docx_bytes.getvalue())
+    
+    @pytest.mark.asyncio
+    async def test_extract_openoffice_docx_integration(self, tmp_path):
+        """Test extracting OpenOffice-style DOCX with fallback."""
+        import zipfile
+        
+        # Create OpenOffice-style DOCX (without webSettings.xml which causes the error)
+        doc_path = tmp_path / "openoffice_test.docx"
+        with zipfile.ZipFile(str(doc_path), 'w') as zf:
+            # OpenOffice-style document.xml (minimal structure)
+            doc_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:body>
+                    <w:p><w:r><w:t>OpenOffice created document</w:t></w:r></w:p>
+                    <w:p><w:r><w:t>Testing fallback extraction mechanism</w:t></w:r></w:p>
+                </w:body>
+            </w:document>'''
+            zf.writestr('word/document.xml', doc_xml)
+            # Minimal content types file
+            zf.writestr('[Content_Types].xml', '<?xml version="1.0"?><Types/>')
+        
+        service = ExtractionService()
+        result = await service.extract_docx(str(doc_path))
+        
+        # Should succeed using fallback
+        assert result.word_count > 0
+        assert "OpenOffice created document" in result.extracted_text
+        assert result.extraction_method == "docx-zip-fallback"
+        assert result.warnings is not None  # Should have warning about fallback
+
+
