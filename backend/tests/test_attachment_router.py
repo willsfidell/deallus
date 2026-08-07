@@ -727,5 +727,51 @@ class TestAttachmentIntegration:
                 os.remove(temp_path)
 
 
+class TestOpenOfficeDOCXIntegration:
+    """Integration tests for OpenOffice DOCX extraction with fallback."""
+    
+    @pytest.mark.asyncio
+    async def test_extract_openoffice_docx_uses_fallback(self):
+        """Test that OpenOffice DOCX files use ZIP fallback successfully."""
+        import zipfile
+        import tempfile
+        from app.services.extraction_service import ExtractionService
+        
+        # Create OpenOffice-style DOCX (minimal structure without webSettings.xml)
+        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp:
+            with zipfile.ZipFile(tmp.name, 'w') as zf:
+                # OpenOffice-style document.xml (the structure that causes python-docx to fail)
+                doc_xml = '''<?xml version="1.0" encoding="UTF-8"?>
+                <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                    <w:body>
+                        <w:p><w:r><w:t>This is an OpenOffice document</w:t></w:r></w:p>
+                        <w:p><w:r><w:t>Testing fallback extraction mechanism</w:t></w:r></w:p>
+                        <w:p><w:r><w:t>Multiple paragraphs for testing</w:t></w:r></w:p>
+                    </w:body>
+                </w:document>'''
+                zf.writestr('word/document.xml', doc_xml)
+                zf.writestr('[Content_Types].xml', '<?xml version="1.0"?><Types/>')
+            
+            try:
+                # Extract using the service
+                service = ExtractionService()
+                result = await service.extract_docx(tmp.name)
+                
+                # Verify extraction succeeded
+                assert result.word_count > 0
+                assert 'OpenOffice document' in result.extracted_text
+                assert 'Testing fallback extraction' in result.extracted_text
+                # Should use fallback since python-docx will fail on this structure
+                assert result.extraction_method in ['python-docx', 'docx-zip-fallback']
+                assert result.error is None
+                
+                # If fallback was used, should have warning
+                if result.extraction_method == 'docx-zip-fallback':
+                    assert result.warnings is not None
+            finally:
+                import os
+                os.remove(tmp.name)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
