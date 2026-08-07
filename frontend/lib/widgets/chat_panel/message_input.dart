@@ -6,8 +6,11 @@ import 'package:logger/logger.dart';
 import '../../providers/attachment_provider.dart';
 import '../../providers/conversation_provider.dart';
 import '../../providers/message_provider.dart';
+import '../../services/audio_service.dart';
+import '../../services/transcription_service.dart';
 import 'attachment_chip.dart';
 import 'file_picker_button.dart';
+import 'voice_recording_widget.dart';
 
 /// Message input widget
 class MessageInput extends ConsumerStatefulWidget {
@@ -25,12 +28,18 @@ class MessageInput extends ConsumerStatefulWidget {
 class _MessageInputState extends ConsumerState<MessageInput> {
   late TextEditingController _messageController;
   bool _isSending = false;
+  bool _isRecording = false;
+  bool _isTranscribing = false;
+  late AudioRecorderService _audioService;
+  late TranscriptionService _transcriptionService;
   final Logger _logger = Logger();
 
   @override
   void initState() {
     super.initState();
     _messageController = TextEditingController();
+    _audioService = AudioRecorderService();
+    _transcriptionService = TranscriptionService();
     // Listen to text changes to trigger rebuild
     _messageController.addListener(() {
       setState(() {
@@ -111,9 +120,79 @@ class _MessageInputState extends ConsumerState<MessageInput> {
     }
   }
 
+  void _toggleRecording() {
+    setState(() {
+      _isRecording = !_isRecording;
+    });
+  }
+
+  void _handleTranscriptionStart() {
+    setState(() {
+      _isTranscribing = true;
+    });
+  }
+
+  Future<void> _handleTranscription(String filePath) async {
+    try {
+      // Get API key from secure storage or auth state
+      // For now, assume it's available from environment or prefs
+      const apiKey = 'your_api_key_here'; // TODO: Get from auth provider
+
+      final audioFile = File(filePath);
+      final transcribedText =
+          await _transcriptionService.transcribeAudio(audioFile, apiKey);
+
+      if (mounted) {
+        setState(() {
+          _messageController.text = transcribedText;
+          _isRecording = false;
+          _isTranscribing = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Transcribed successfully'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      _logger.e('Transcription error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Transcription failed: $e'),
+            duration: const Duration(seconds: 2),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() {
+          _isRecording = false;
+          _isTranscribing = false;
+        });
+      }
+    }
+  }
+
+  void _handleRecordingCancelled() {
+    setState(() {
+      _isRecording = false;
+      _isTranscribing = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final attachmentState = ref.watch(attachmentProvider);
+
+    // Show voice recording widget when recording
+    if (_isRecording) {
+      return VoiceRecordingWidget(
+        onTranscriptionComplete: _handleTranscription,
+        onCancel: _handleRecordingCancelled,
+        onTranscriptionStart: _handleTranscriptionStart,
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -153,6 +232,23 @@ class _MessageInputState extends ConsumerState<MessageInput> {
           ),
           child: Column(
             children: [
+              // Show transcribing indicator
+              if (_isTranscribing)
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 12),
+                      const Text('Transcribing...'),
+                    ],
+                  ),
+                ),
+
               // Message input
               Padding(
                 padding: const EdgeInsets.all(12),
@@ -166,7 +262,7 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                     contentPadding: EdgeInsets.zero,
                     isDense: true,
                   ),
-                  enabled: !_isSending,
+                  enabled: !_isSending && !_isTranscribing,
                 ),
               ),
 
@@ -197,10 +293,9 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                           message: 'Record audio (max 2 min)',
                           child: IconButton(
                             icon: const Icon(Icons.mic),
-                            onPressed: _isSending
+                            onPressed: (_isSending || _isTranscribing)
                                 ? null
-                                : () => _logger.d(
-                                    'Audio recording not implemented yet'),
+                                : _toggleRecording,
                           ),
                         ),
                       ],
@@ -210,10 +305,11 @@ class _MessageInputState extends ConsumerState<MessageInput> {
                     Tooltip(
                       message: 'Send message',
                       child: FloatingActionButton(
-                        onPressed:
-                            (_messageController.text.isEmpty) || _isSending
-                                ? null
-                                : () => _sendMessage(ref),
+                        onPressed: (_messageController.text.isEmpty) ||
+                                _isSending ||
+                                _isTranscribing
+                            ? null
+                            : () => _sendMessage(ref),
                         mini: true,
                         child: _isSending
                             ? const SizedBox(
