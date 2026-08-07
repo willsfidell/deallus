@@ -95,6 +95,19 @@ class Settings(BaseSettings):
     OCR_FALLBACK_ENABLED: bool = True  # Fall back to PaddleOCR CPU if vision fails
     PADDLEOCR_USE_GPU: bool = False  # Explicitly set PaddleOCR to CPU-only (no GPU in API container)
 
+    # Voice Transcription Settings
+    TRANSCRIPTION_ENABLED: bool = True
+    TRANSCRIPTION_MODEL: str = "whisper"  # Ollama model identifier
+    TRANSCRIPTION_TIMEOUT_SECONDS: int = 60
+    TRANSCRIPTION_MAX_FILE_SIZE_MB: int = 10
+    ALLOWED_AUDIO_FORMATS: list = [
+        "audio/wav",
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/m4a",
+        "audio/webm"
+    ]
+
     class Config:
         env_file = ".env"
         case_sensitive = True
