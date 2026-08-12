@@ -1,6 +1,6 @@
 """Tool registry and execution engine."""
 
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal
 import importlib
 import inspect
 import os

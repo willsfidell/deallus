@@ -83,13 +83,13 @@ services:
       VISION_OCR_BASE_URL: "http://ollama:11434"
       VISION_OCR_TIMEOUT_SECONDS: "45"
       VISION_OCR_MAX_RETRIES: "1"
-       OCR_FALLBACK_ENABLED: "true"
-       PADDLEOCR_USE_GPU: "false"
-       # Voice Transcription Configuration
-       TRANSCRIPTION_ENABLED: "true"
-       TRANSCRIPTION_MODEL: "whisper"
-       TRANSCRIPTION_TIMEOUT_SECONDS: "60"
-       TRANSCRIPTION_MAX_FILE_SIZE_MB: "10"
+      OCR_FALLBACK_ENABLED: "true"
+      PADDLEOCR_USE_GPU: "false"
+      # Voice Transcription Configuration
+      TRANSCRIPTION_ENABLED: "true"
+      TRANSCRIPTION_MODEL: "base"
+      TRANSCRIPTION_TIMEOUT_SECONDS: "90"
+      TRANSCRIPTION_MAX_FILE_SIZE_MB: "10"
     ports:
       - "8000:8000"
     depends_on:

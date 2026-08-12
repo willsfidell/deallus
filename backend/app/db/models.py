@@ -6,7 +6,6 @@ Uses SQLAlchemy 2.0 with Pydantic integration.
 """
 
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, Boolean, Index, JSON, Float
 from sqlalchemy.ext.declarative import declarative_base

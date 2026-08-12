@@ -1,10 +1,9 @@
 """Authentication utilities for AIDI."""
 
 import hashlib
-import hmac
 import logging
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -70,12 +69,14 @@ def verify_api_key(db: Session, api_key: str) -> Optional[User]:
     try:
         # Hash the provided key
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+        logger.info(api_key)
+        logger.info(key_hash)
         logger.info(f"[verify_api_key] Computing hash for provided API key. Hash: {key_hash[:16]}...")
 
         # Look up the API key
         api_key_obj = db.query(APIKey).filter(
             APIKey.key == key_hash,
-            APIKey.is_active == True,
+            APIKey.is_active == True, # noqa
         ).first()
 
         if not api_key_obj:
@@ -87,7 +88,7 @@ def verify_api_key(db: Session, api_key: str) -> Optional[User]:
         # Check if user is active
         user = db.query(User).filter(
             User.id == api_key_obj.user_id,
-            User.is_active == True,
+            User.is_active == True, # noqa
         ).first()
 
         if not user:
@@ -145,7 +146,7 @@ def create_user(db: Session, email: str, username: str, password: str) -> Option
 
         return user
 
-    except Exception as e:
+    except Exception:
         db.rollback()
         return None
 
@@ -163,7 +164,7 @@ def verify_user_credentials(db: Session, email: str, password: str) -> Optional[
         User object if credentials valid, None otherwise
     """
     try:
-        user = db.query(User).filter(User.email == email, User.is_active == True).first()
+        user = db.query(User).filter(User.email == email, User.is_active == True).first() # noqa 
 
         if not user:
             return None
@@ -173,7 +174,7 @@ def verify_user_credentials(db: Session, email: str, password: str) -> Optional[
 
         return user
 
-    except Exception as e:
+    except Exception:
         return None
 
 
@@ -191,7 +192,7 @@ def create_api_key(db: Session, user_id: int, name: str) -> Optional[tuple[str, 
     """
     try:
         # Verify user exists
-        user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+        user = db.query(User).filter(User.id == user_id, User.is_active == True).first() # noqa
         if not user:
             return None
 
@@ -212,7 +213,7 @@ def create_api_key(db: Session, user_id: int, name: str) -> Optional[tuple[str, 
 
         return full_key, api_key
 
-    except Exception as e:
+    except Exception:
         db.rollback()
         return None
 

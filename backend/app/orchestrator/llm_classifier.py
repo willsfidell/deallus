@@ -1,6 +1,5 @@
 """LLM-based classifier for AIDI orchestrator."""
 
-import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -80,7 +79,7 @@ User request: """ + prompt
         # Note: Actual LLM call will be made in the hybrid router
         # This method provides the structure for async classification
 
-        classification_prompt = self.build_classification_prompt(prompt)
+        _ = self.build_classification_prompt(prompt)
 
         # Placeholder for actual LLM call via LiteLLM
         # Will be implemented in hybrid_router.py with actual LLM integration

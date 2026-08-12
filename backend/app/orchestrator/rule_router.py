@@ -1,7 +1,6 @@
 """Rule-based router for AIDI orchestrator."""
 
 import logging
-from typing import Optional
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -57,7 +56,7 @@ class RuleRouter:
             "label", "annotation", "classify me",
         ]
         if any(keyword in prompt_lower for keyword in classification_keywords):
-            logger.info(f"Rule-based routing: classification keywords detected")
+            logger.info("Rule-based routing: classification keywords detected")
             return RoutingDecision(
                 model=self.classifier_model,
                 confidence=0.90,
@@ -72,7 +71,7 @@ class RuleRouter:
             "what is", "how does", "why",
         ]
         if any(keyword in prompt_lower for keyword in analysis_keywords):
-            logger.info(f"Rule-based routing: analysis keywords detected")
+            logger.info("Rule-based routing: analysis keywords detected")
             return RoutingDecision(
                 model=self.text_model,
                 confidence=0.85,
@@ -87,7 +86,7 @@ class RuleRouter:
             "debug", "fix", "implement", "algorithm",
         ]
         if any(keyword in prompt_lower for keyword in code_keywords):
-            logger.info(f"Rule-based routing: code/technical keywords detected")
+            logger.info("Rule-based routing: code/technical keywords detected")
             return RoutingDecision(
                 model=self.text_model,
                 confidence=0.80,
@@ -97,7 +96,7 @@ class RuleRouter:
 
         # Rule 4: Question-based (likely needs LLM for better understanding)
         if prompt_lower.strip().endswith("?") and len(prompt) > 10:
-            logger.info(f"Rule-based routing: question detected")
+            logger.info("Rule-based routing: question detected")
             return RoutingDecision(
                 model=self.text_model,
                 confidence=0.70,
@@ -106,7 +105,7 @@ class RuleRouter:
             )
 
         # Default: Use text model with low confidence (needs LLM review)
-        logger.info(f"Rule-based routing: no rules matched, defaulting to text model")
+        logger.info("Rule-based routing: no rules matched, defaulting to text model")
         return RoutingDecision(
             model=self.text_model,
             confidence=0.50,

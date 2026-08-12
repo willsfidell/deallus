@@ -16,7 +16,6 @@ from app.db.models import Conversation, Message
 from app.services.redis_service import (
     RedisService,
     get_conversation_cache_key,
-    get_conversation_messages_key,
 )
 
 logger = logging.getLogger(__name__)
@@ -334,7 +333,6 @@ Be factual and technical. Format as bullet points."""
 
             # Create summary message
             import uuid
-            from datetime import datetime
             summary_message = Message(
                 id=str(uuid.uuid4()),
                 conversation_id=conversation_id,
@@ -364,7 +362,7 @@ Be factual and technical. Format as bullet points."""
             if self.redis:
                 cache_key = get_conversation_cache_key(conversation_id)
                 await self.redis.delete(cache_key)
-                logger.debug(f"♻️  Invalidated context cache after summarization")
+                logger.debug("♻️  Invalidated context cache after summarization")
 
             return summary
 

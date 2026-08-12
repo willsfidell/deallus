@@ -4,8 +4,6 @@ import asyncio
 import logging
 import time
 import uuid
-from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header, status
 from sqlalchemy.orm import Session
@@ -88,7 +86,7 @@ async def verify_api_key_header(
     user = verify_api_key(db=db, api_key=x_api_key)
 
     if not user:
-        logger.error(f"[verify_api_key_header] API key verification failed. Raising 401 HTTPException")
+        logger.error("[verify_api_key_header] API key verification failed. Raising 401 HTTPException")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",

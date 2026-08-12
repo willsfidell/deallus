@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logger/logger.dart';
 import '../../services/audio_service.dart';
 
 class VoiceRecordingWidget extends ConsumerStatefulWidget {
@@ -21,6 +22,7 @@ class VoiceRecordingWidget extends ConsumerStatefulWidget {
 
 class _VoiceRecordingWidgetState extends ConsumerState<VoiceRecordingWidget> {
   late AudioRecorderService _audioService;
+  final Logger _logger = Logger();
   bool _isRecording = false;
   Duration _recordingTime = Duration.zero;
   Duration _remainingTime = const Duration(minutes: 2);
@@ -51,8 +53,12 @@ class _VoiceRecordingWidgetState extends ConsumerState<VoiceRecordingWidget> {
   }
 
   Future<void> _startRecording() async {
+    _logger.i('=== Starting recording ===');
     final success = await _audioService.startRecording();
+    _logger.i('Recording start result: $success');
+    
     if (!success) {
+      _logger.e('Failed to start recording');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -66,8 +72,12 @@ class _VoiceRecordingWidgetState extends ConsumerState<VoiceRecordingWidget> {
   }
 
   Future<void> _stopRecording() async {
+    _logger.i('=== Stopping recording ===');
     final filePath = await _audioService.stopRecording();
+    _logger.i('Recording stopped - File path: $filePath');
+    
     if (filePath == null) {
+      _logger.e('stopRecording returned null');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -79,11 +89,13 @@ class _VoiceRecordingWidgetState extends ConsumerState<VoiceRecordingWidget> {
       return;
     }
 
+    _logger.i('Recording file path obtained: $filePath');
     if (mounted) {
       setState(() {
         _isRecording = false;
       });
       widget.onTranscriptionStart();
+      _logger.i('Calling onTranscriptionComplete with path: $filePath');
       widget.onTranscriptionComplete(filePath);
     }
   }

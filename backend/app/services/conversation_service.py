@@ -132,7 +132,7 @@ class ConversationService:
         query = db.query(Conversation).filter(Conversation.user_id == user_id)
 
         if active_only:
-            query = query.filter(Conversation.is_active == True)
+            query = query.filter(Conversation.is_active == True) # noqa
 
         conversations = query.order_by(
             desc(Conversation.updated_at)
@@ -192,10 +192,7 @@ class ConversationService:
         if self.redis:
             cache_key = get_conversation_cache_key(conversation_id)
             import asyncio
-            try:
-                asyncio.create_task(self.redis.delete(cache_key))
-            except:
-                pass
+            asyncio.create_task(self.redis.delete(cache_key))
 
         return conversation
 
@@ -234,10 +231,7 @@ class ConversationService:
         if self.redis:
             cache_key = get_conversation_cache_key(conversation_id)
             import asyncio
-            try:
-                asyncio.create_task(self.redis.delete(cache_key))
-            except:
-                pass
+            asyncio.create_task(self.redis.delete(cache_key))
 
         return conversation
 
@@ -304,10 +298,7 @@ class ConversationService:
         if self.redis:
             cache_key = get_conversation_cache_key(conversation_id)
             import asyncio
-            try:
-                asyncio.create_task(self.redis.delete(cache_key))
-            except:
-                pass
+            asyncio.create_task(self.redis.delete(cache_key))
 
         return message
 
@@ -406,10 +397,7 @@ class ConversationService:
         if self.redis:
             cache_key = get_conversation_cache_key(conversation_id)
             import asyncio
-            try:
-                asyncio.create_task(self.redis.delete(cache_key))
-            except:
-                pass
+            asyncio.create_task(self.redis.delete(cache_key))
 
         return True
 
@@ -452,10 +440,7 @@ class ConversationService:
         if self.redis:
             cache_key = get_conversation_cache_key(conversation_id)
             import asyncio
-            try:
-                asyncio.create_task(self.redis.delete(cache_key))
-            except:
-                pass
+            asyncio.create_task(self.redis.delete(cache_key))
 
         return conversation
 
@@ -583,10 +568,7 @@ class ConversationService:
             # Invalidate Redis cache
             if self.redis:
                 cache_key = get_conversation_cache_key(conversation_id)
-                try:
-                    asyncio.create_task(self.redis.delete(cache_key))
-                except:
-                    pass
+                asyncio.create_task(self.redis.delete(cache_key))
 
             return True
 

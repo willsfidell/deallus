@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
 
 import '../../providers/attachment_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/conversation_provider.dart';
 import '../../providers/message_provider.dart';
 import '../../services/audio_service.dart';
@@ -134,11 +135,35 @@ class _MessageInputState extends ConsumerState<MessageInput> {
 
   Future<void> _handleTranscription(String filePath) async {
     try {
-      // Get API key from secure storage or auth state
-      // For now, assume it's available from environment or prefs
-      const apiKey = 'your_api_key_here'; // TODO: Get from auth provider
-
+      _logger.i('=== Transcription process started ===');
+      _logger.i('File path: $filePath');
+      
+      // Verify file exists and has content
       final audioFile = File(filePath);
+      final exists = await audioFile.exists();
+      _logger.i('Audio file exists: $exists');
+      
+      if (!exists) {
+        throw Exception('Audio file not found at path: $filePath');
+      }
+      
+      final fileSize = await audioFile.length();
+      _logger.i('Audio file size: $fileSize bytes');
+      
+      if (fileSize == 0) {
+        throw Exception('Audio file is empty (0 bytes) - no audio was recorded');
+      }
+      
+      // Get API key from auth provider
+      final authState = ref.read(authProvider);
+      final apiKey = authState.whenData((auth) => auth.apiKey).value;
+
+      if (apiKey == null || apiKey.isEmpty) {
+        throw Exception('API key not configured. Please set your API credentials in settings.');
+      }
+      
+      _logger.i('API key available: ${apiKey.substring(0, 10)}...');
+
       final transcribedText =
           await _transcriptionService.transcribeAudio(audioFile, apiKey);
 

@@ -1,7 +1,7 @@
 """Base tool class and models for pluggable tool system."""
 
 from enum import Enum
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal
 from pydantic import BaseModel, Field
 from langchain.tools import BaseTool
 import abc

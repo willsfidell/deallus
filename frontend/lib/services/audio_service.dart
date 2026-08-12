@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:record/record.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:logger/logger.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -44,11 +43,19 @@ class AudioRecorderService {
   /// Request microphone permission
   Future<bool> requestPermission() async {
     try {
-      final status = await Permission.microphone.request();
-      _logger.i('Microphone permission: $status');
-      return status.isGranted;
+      // record package handles permission requests internally
+      // On desktop, this returns true
+      // On mobile, it checks/requests permission
+      final hasPermission = await _audioRecorder.hasPermission();
+      _logger.i('Microphone permission: $hasPermission');
+      return hasPermission;
     } catch (e) {
       _logger.e('Error requesting microphone permission: $e');
+      // On desktop platforms, assume permission is granted
+      if (Platform.isLinux || Platform.isMacOS || Platform.isWindows) {
+        _logger.w('Desktop platform detected, assuming microphone access available');
+        return true;
+      }
       return false;
     }
   }
@@ -56,10 +63,15 @@ class AudioRecorderService {
   /// Check if microphone permission is granted
   Future<bool> hasPermission() async {
     try {
-      final status = await Permission.microphone.status;
-      return status.isGranted;
+      final hasPermission = await _audioRecorder.hasPermission();
+      return hasPermission;
     } catch (e) {
       _logger.e('Error checking microphone permission: $e');
+      // On desktop platforms, assume permission is granted
+      if (Platform.isLinux || Platform.isMacOS || Platform.isWindows) {
+        _logger.w('Desktop platform detected, assuming microphone access available');
+        return true;
+      }
       return false;
     }
   }

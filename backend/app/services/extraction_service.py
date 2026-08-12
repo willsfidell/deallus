@@ -5,7 +5,6 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Callable
-from pathlib import Path
 from io import BytesIO
 
 from app.config import settings
@@ -137,7 +136,7 @@ class ExtractionService:
                             processing_time_ms=elapsed_time
                         )
                     else:
-                        logger.warning(f"Vision OCR failed, will try fallback methods")
+                        logger.warning("Vision OCR failed, will try fallback methods")
                 
                 # Fall back to Marker extraction if configured (high-quality extraction, requires GPU)
                 # This is intentionally last before PaddleOCR as it requires more complex setup

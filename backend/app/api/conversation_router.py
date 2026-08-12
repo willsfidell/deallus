@@ -1,14 +1,12 @@
 """Conversation API endpoints."""
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.auth import verify_api_key
-from app.db.models import Message, Conversation
 from app.models.schemas import (
     ConversationCreate,
     ConversationResponse,
@@ -16,7 +14,7 @@ from app.models.schemas import (
     MessageResponse,
 )
 from app.services.conversation_service import ConversationService
-from app.services.redis_service import RedisService, get_conversation_cache_key
+from app.services.redis_service import RedisService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -31,7 +29,7 @@ async def verify_api_key_header(
     user = verify_api_key(db=db, api_key=x_api_key)
 
     if not user:
-        logger.error(f"[verify_api_key_header] API key verification failed. Raising 401 HTTPException")
+        logger.error("[verify_api_key_header] API key verification failed. Raising 401 HTTPException")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
@@ -370,68 +368,68 @@ async def clear_conversation(
         )
 
 
-@router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_conversation(
-    conversation_id: str,
-    user=Depends(verify_api_key_header),
-    db: Session = Depends(get_db),
-) -> None:
-    """
-    Delete a conversation and all its messages (hard delete).
-
-    Args:
-        conversation_id: ID of conversation to delete
-        user: Authenticated user
-        db: Database session
-
-    Returns:
-        None (204 No Content)
-    """
-    try:
-        redis_service = await RedisService.get_instance()
-        conversation_service = ConversationService(redis_service)
-
-        # Verify conversation exists and belongs to user
-        conversation = conversation_service.get_conversation(
-            conversation_id=conversation_id,
-            user_id=user.id,
-            db=db,
-        )
-
-        if not conversation:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Conversation not found",
-            )
-
-        # Delete all messages in the conversation
-        db.query(Message).filter(
-            Message.conversation_id == conversation_id
-        ).delete(synchronize_session=False)
-
-        # Delete the conversation
-        db.query(Conversation).filter(
-            Conversation.id == conversation_id
-        ).delete(synchronize_session=False)
-
-        db.commit()
-
-        # Invalidate Redis cache
-        if redis_service:
-            cache_key = get_conversation_cache_key(conversation_id)
-            try:
-                await redis_service.delete(cache_key)
-            except Exception as e:
-                logger.warning(f"Failed to invalidate cache: {e}")
-
-        logger.info(f"Deleted conversation {conversation_id} for user {user.id}")
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error deleting conversation: {e}")
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete conversation",
-        )
+#@router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+#async def delete_conversation(
+#    conversation_id: str,
+#    user=Depends(verify_api_key_header),
+#    db: Session = Depends(get_db),
+#) -> None:
+#    """
+#    Delete a conversation and all its messages (hard delete).
+#
+#    Args:
+#        conversation_id: ID of conversation to delete
+#        user: Authenticated user
+#        db: Database session
+#
+#    Returns:
+#        None (204 No Content)
+#    """
+#    try:
+#        redis_service = await RedisService.get_instance()
+#        conversation_service = ConversationService(redis_service)
+#
+#        # Verify conversation exists and belongs to user
+#        conversation = conversation_service.get_conversation(
+#            conversation_id=conversation_id,
+#            user_id=user.id,
+#            db=db,
+#        )
+#
+#        if not conversation:
+#            raise HTTPException(
+#                status_code=status.HTTP_404_NOT_FOUND,
+#                detail="Conversation not found",
+#            )
+#
+#        # Delete all messages in the conversation
+#        db.query(Message).filter(
+#            Message.conversation_id == conversation_id
+#        ).delete(synchronize_session=False)
+#
+#        # Delete the conversation
+#        db.query(Conversation).filter(
+#            Conversation.id == conversation_id
+#        ).delete(synchronize_session=False)
+#
+#        db.commit()
+#
+#        # Invalidate Redis cache
+#        if redis_service:
+#            cache_key = get_conversation_cache_key(conversation_id)
+#            try:
+#                await redis_service.delete(cache_key)
+#            except Exception as e:
+#                logger.warning(f"Failed to invalidate cache: {e}")
+#
+#        logger.info(f"Deleted conversation {conversation_id} for user {user.id}")
+#
+#    except HTTPException:
+#        raise
+#    except Exception as e:
+#        logger.error(f"Error deleting conversation: {e}")
+#        db.rollback()
+#        raise HTTPException(
+#            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#            detail="Failed to delete conversation",
+#        )

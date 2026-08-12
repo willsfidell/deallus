@@ -34,15 +34,21 @@ class TranscriptionService {
       final fileSizeMB = fileSize / (1024 * 1024);
       _logger.i('Audio file size: ${fileSizeMB.toStringAsFixed(2)}MB');
 
-      // Create multipart form data
+      // Create multipart form data with explicit MIME type
+      final multipartFile = await MultipartFile.fromFile(
+        audioFile.path,
+        filename: 'recording.wav',
+        contentType: DioMediaType.parse('audio/wav'),
+      );
+      
+      _logger.i('Multipart file - Name: ${multipartFile.filename}, Size: ${multipartFile.length} bytes, Content-Type: ${multipartFile.contentType}');
+      
       FormData formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(
-          audioFile.path,
-          filename: 'recording.wav',
-        ),
+        'file': multipartFile,
       });
 
       _logger.i('Sending transcription request to $_baseUrl/api/transcribe');
+      _logger.d('Request headers: X-API-Key: ${apiKey.substring(0, 10)}...');
 
       final response = await _dio.post(
         '/api/transcribe',
@@ -73,12 +79,16 @@ class TranscriptionService {
       }
     } on DioException catch (e) {
       _logger.e('Dio error: ${e.message}');
+      _logger.e('Response status: ${e.response?.statusCode}');
+      _logger.e('Response data: ${e.response?.data}');
       
       if (e.type == DioExceptionType.connectionTimeout ||
           e.type == DioExceptionType.receiveTimeout) {
         throw Exception('Transcription timeout - server took too long to respond');
       } else if (e.response?.statusCode == 400) {
-        throw Exception('Invalid audio format or missing file');
+        final errorDetail = e.response?.data['detail'] ?? 'Unknown error';
+        _logger.e('400 Error detail: $errorDetail');
+        throw Exception('Invalid request: $errorDetail');
       } else if (e.response?.statusCode == 413) {
         throw Exception('Audio file too large (max 10MB)');
       } else if (e.response?.statusCode == 500) {

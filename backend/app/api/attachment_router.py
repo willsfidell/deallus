@@ -3,7 +3,6 @@
 import logging
 import uuid
 import os
-from typing import Optional
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status, Header
@@ -275,7 +274,7 @@ async def delete_attachment(
         if redis:
             try:
                 await redis.delete(f"attachment:{attachment_id}")
-            except Exception as e:
+            except Exception:
                 logger.exception(f"Failed to clear Redis cache for attachment {attachment_id}")
         
         logger.info(f"Deleted attachment: {attachment_id}")

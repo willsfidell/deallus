@@ -238,7 +238,7 @@ class ModelRegistry:
             + (", with continuity bonus" if best_match['bonus_applied'] else "") + ")"
         )
         
-        logger.info(f"🔍 All matches in priority order:")
+        logger.info("🔍 All matches in priority order:")
         for match in sorted(matches, key=lambda m: (m["priority"], m["confidence"]), reverse=True):
             logger.info(
                 f"🔍   - {match['model'].name}: priority={match['priority']}, "

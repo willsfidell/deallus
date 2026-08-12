@@ -97,8 +97,8 @@ class Settings(BaseSettings):
 
     # Voice Transcription Settings
     TRANSCRIPTION_ENABLED: bool = True
-    TRANSCRIPTION_MODEL: str = "whisper"  # Ollama model identifier
-    TRANSCRIPTION_TIMEOUT_SECONDS: int = 60
+    TRANSCRIPTION_MODEL: str = "base"  # faster-whisper model identifier
+    TRANSCRIPTION_TIMEOUT_SECONDS: int = 90
     TRANSCRIPTION_MAX_FILE_SIZE_MB: int = 10
     ALLOWED_AUDIO_FORMATS: list = [
         "audio/wav",

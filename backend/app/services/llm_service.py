@@ -2,7 +2,6 @@
 
 import logging
 from typing import Optional, List, Dict
-import asyncio
 
 from litellm import completion, acompletion
 from litellm.exceptions import APIError, APIConnectionError, RateLimitError, AuthenticationError

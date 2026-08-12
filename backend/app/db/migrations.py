@@ -3,7 +3,6 @@
 import os
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import text
 
 from app.db.database import engine

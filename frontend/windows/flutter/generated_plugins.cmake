@@ -6,7 +6,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
   file_saver
   flutter_secure_storage_windows
   irondash_engine_context
-  permission_handler_windows
   record_windows
   screen_retriever_windows
   super_native_extensions
